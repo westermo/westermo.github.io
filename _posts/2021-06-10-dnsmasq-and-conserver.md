@@ -40,9 +40,13 @@ be quite user friendly.
 The traditional `/etc/dnsmasq.conf` has today mostly been replaced with
 the new `/etc/dnsmasq.d/` directory where you can add multiple files.
 
-Let's create `/etc/dnsmasq.d/foo.conf`, adding the following content:
+Let's create `/etc/dnsmasq.d/foo.conf`, please note the interface names
+are for my PC, yours may be very different:
 
 ```
+# You may need to uncomment this, depending on other
+# services also using dnsmasq
+#bind-dynamic
 bootp-dynamic
 
 dhcp-host=id:basis,set:basis
@@ -61,6 +65,11 @@ dhcp-range=tag:usb1,192.168.2.100,192.168.2.199,1h
 except-interface=lo
 except-interface=eth0
 ```
+
+> **NOTE:** You _need_ to change the interface name in `dhcp-range`
+> to match _your interface(s)_. These interfaces also need to have
+> an IP address in the same subnet as used above, or change the
+> DHCP range to match your interface(s).
 
 The [dnsmasq(8)][] manual page is the authoritative documentation, so
 check that for the syntax of each command.  This blog post will only
