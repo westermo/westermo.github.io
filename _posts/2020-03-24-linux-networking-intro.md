@@ -1,8 +1,9 @@
 ---
 layout: post
 title:  "Linux Networking Introduction"
+author: Joachim Wiberg
 date:   2020-03-24 19:22:42 +0100
-categories: howto
+tag: howto
 ---
 
 Every engineer and sysadmin working with Linux have at one time or
@@ -11,6 +12,8 @@ series showing how to set up networking using low-level tools like:
 `ip`, `bridge`, `tc`, and `ethtool`.
 
 Let's start by exploring the basic concepts of networking.
+
+<!-- more -->
 
 ## LAN and Broadcast Domains
 

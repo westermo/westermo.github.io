@@ -1,15 +1,55 @@
-title: Train of Thought
+#title: Train of Thought
+title: Westermo Labs
+author: Westermo Engineers
 #email: info@westermo.com
 description: >-
-  Ramblings of software engineers building networking hardware using Linux.
+  Ramblings of software engineers building networking hardware using Linux
 baseurl: ""
 url: "https://westermo.github.io"
+lang: en
+timezone: CET
 #twitter_username: westermo
-github_username:  westermo
+github_username: westermo
+logo: # path of site logo, e.g. "/assets/images/logo.png"
+search: # true, false (default)
+search_full_content: false # true, false (default)
+search_provider: # lunr (default), algolia
+algolia:
+  application_id: # YOUR_APPLICATION_ID
+  index_name: # YOUR_INDEX_NAME
+  search_only_api_key: # YOUR_SEARCH_ONLY_API_KEY
+  powered_by: # true (default), false
 
 # Build settings
 markdown: kramdown
-theme: minima
-#remote_theme: poole/hyde
+excerpt_separator: "<!-- more -->"
+#theme: minima
+#theme: jekyll-theme-basically-basic
+theme: jekyll-whiteglass
+
 plugins:
-  - jekyll-feed
+  - jekyll-archives
+  - jekyll-sitemap
+  - jekyll-paginate
+
+permalink: /:year/:month/:day/:title/
+paginate_path: /posts/:num/
+paginate: 5
+
+# Markdown settings
+kramdown:
+  auto_ids: false
+  enable_coderay: false
+  entity_output: as_char
+  footnote_nr: 1
+  smart_quotes: lsquo,rsquo,ldquo,rdquo
+  toc_levels: 1..6
+
+jekyll-archives:
+  enabled:
+    - categories
+    - tags
+  layout: category_archives
+  permalinks:
+    category: /categories/:name/
+    tag: /tags/:name/

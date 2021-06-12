@@ -1,8 +1,9 @@
 ---
 layout: post
 title:  "Linux Networking Bridge"
+author: Joachim Wiberg
 date:   2020-03-25 00:20:42 +0100
-categories: howto
+tag: howto
 ---
 
 This is the second post in a series of posts showing how to set up
@@ -10,6 +11,7 @@ networking in Linux using low-level tools.
 
 It's time to talk about bridging (switching) and VLANs.
 
+<!-- more -->
 
 ## Bridging, or Switching
 

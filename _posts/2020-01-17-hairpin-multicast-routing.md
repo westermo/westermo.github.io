@@ -1,9 +1,12 @@
 ---
 layout: post
 title:  "Hairpin Multicast Routing"
+author: Tobias Waldekranz
 date:   2020-01-17 09:36:42 +0100
-categories: bugstory
+tag: bugstory
 ---
+
+<!-- more -->
 
 Problem
 =======

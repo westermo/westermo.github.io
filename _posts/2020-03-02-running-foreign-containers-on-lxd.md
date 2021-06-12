@@ -1,21 +1,24 @@
 ---
 layout: post
 title:  "Running Foreign Containers on LXD"
+author: Tobias Waldekranz
 date:   2020-03-02 15:43:00 +0100
 categories: containers
 ---
 
-Recently, we added LXD support to [myrootfs], to make it easy to test
+<!-- more -->
+
+Recently, we added LXD support to [myrootfs][], to make it easy to test
 a container on your local machine before deploying it to the target
 device.  In addition to wrapping the basics of importing images and
 launching containers, there is also support for handling containers of
-foreign architectures.  This is very useful in embedded scenarios, as
-it allows you to test your container on your development system before
+foreign architectures.  This is very useful in embedded scenarios, as it
+allows you to test your container on your development system before
 deploying to the target.
 
-All of this has been integrated to [myrootfs] so that you don't have
-worry about it. This post is a behind-the-scenes look at how LXD can
-be configured to make it work.
+All of this has been integrated to [myrootfs][] so that you don't have
+worry about it. This post is a behind-the-scenes look at how LXD can be
+configured to make it work.
 
 
 Native Container

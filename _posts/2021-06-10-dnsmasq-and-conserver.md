@@ -1,21 +1,26 @@
 ---
 layout: post
-title:  "Tools of the Trade"
-subtitle: "dnsmasq and conserver"
+title:  "Tools of the Trade :: dnsmasq & conserver"
+author: Joachim Wiberg
+tags:
+  - howto
+  - tools
 date:   2021-06-10 16:37:42 +0100
-categories: howto
 ---
 
 This is the first post, in hopefully a series, detailing tools we
 networking and switch geeks love.  We start with the underrated
 and oft forgotten dnsmasq and conserver.
 
-  - dnsmasq will be used to hand out BOOTP/DHCP leases to our embedded
-    systems, as well as serve firmware images using TFTP
+  - [dnsmasq](https://thekelleys.org.uk/dnsmasq/doc.html) will be used
+    to hand out BOOTP/DHCP leases to our embedded systems, as well as
+    serve firmware images using TFTP
 
-  - conserver will be used to connect to our device's console port so
-    we can access the bootloader and net-boot it from dnsmasq
+  - [conserver](https://www.conserver.com/) will be used to connect to
+    our device's console port so we can access the bootloader and
+    net-boot it from dnsmasq
 
+<!-- more -->
 
 ## Install
 
