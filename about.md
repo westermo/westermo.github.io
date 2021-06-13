@@ -4,7 +4,7 @@ title: About
 permalink: /about/
 ---
 
-This blog tell tales of battles won and lost against unwieldy
+This blog detail tales of battles won and lost against unwieldy
 hardware, pathologically performing distributed systems, and other
 joyful topics around networking in Linux.
 
