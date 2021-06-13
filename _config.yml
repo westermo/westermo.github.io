@@ -24,11 +24,7 @@ algolia:
 markdown: kramdown
 excerpt_separator: "<!-- more -->"
 #theme: minima
-#theme: jekyll-theme-basically-basic
-#theme: jekyll-whiteglass
-
-# Use this when pushing to github
-remote_theme: yous/jekyll-whiteglass
+theme: jekyll-whiteglass
 
 plugins:
   - jekyll-archives
