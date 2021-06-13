@@ -22,7 +22,7 @@ jobs:
           provider: 'github'
           token: ${{ secrets.GH_TOKEN }}
           repository: ''
-          branch: 'gh-pages
+          branch: 'gh-pages'
           jekyll_src: './'
           jekyll_cfg: '_config.yml'
           jekyll_baseurl: ''
