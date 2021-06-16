@@ -77,7 +77,7 @@ good starting point.
 To route traffic between VLAN 1 and VLAN 2 we create the following
 setup (it's starting to look a bit crazy now):
 
-    IP: 192.168.1.1                     IP: 192.169.2.1
+    IP: 192.168.1.1                     IP: 192.168.2.1
                       br0.1     br0.2
                            \   /
                             br0
