@@ -1,9 +1,11 @@
 Blogging @Westermo R&D
 ======================
 
-
-1. Create a blog post in kebab case: `_posts/YYYY-MM-DD-my-neat-title.md`
-2. `jekyll s`
+0. Install prerequisites using bundle install/update, it pulls in
+   everything you need using the Ruby `Gemfile`
+1. Create a blog post in kebab case: `_posts/YYYY-MM-DD-my-neat-title.md`.
+   Copy the front matter from another post, we use tags: ...
+2. `bundle exec jekyll serve`
 3. Write some more
 4. `git commit -sam "New post ..."`
 5. `git push`
@@ -13,7 +15,7 @@ Blogging @Westermo R&D
 
 When working with drafts you need some more arguments to jekyll:
 
-    jekyll serve --watch --drafts
+    bundle exec jekyll serve --watch --drafts
 
 
 About Gemfile.lock
