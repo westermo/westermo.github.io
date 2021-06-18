@@ -1,6 +1,6 @@
 ---
 layout: post
-title:  "Tools of the Trade :: dnsmasq & conserver"
+title:  "Tools of the Trade :: dnsmasq & console"
 author: Joachim Wiberg
 tags:
   - howto
