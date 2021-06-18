@@ -115,7 +115,8 @@ Now, add a couple of ports to the bridge:
     # ip link set eth0 master br0
     # ip link set eth1 master br0
 
-To see the ports:
+To see the ports we use the [bridge(8)][] command, which is also part
+of the iproute2 tool suite:
 
     # bridge link
     2: eth0: <BROADCAST,MULTICAST> mtu 1500 master br0 state disabled priority 32 cost 100 
@@ -126,10 +127,22 @@ To see the default VLAN assignments of ports:
     # bridge vlan show
     port    vlan ids
     eth0     1 PVID Egress Untagged
-    
     eth1     1 PVID Egress Untagged
-    
     br0      1 PVID Egress Untagged
+
+So these ports look OK, the default VLAN ID assigned to ports is 1.
+Lets add the other two, but now we need to tell the bridge to use VLAN
+ID 2 instead.  We also set the `pvid` and `untagged` flags since we
+want to treat these ports as access ports (untagged), and assign their
+default VLAN (ID 2) on ingress (pvid).  Remember to remove from their
+default VLAN (ID 1) as well:
+
+    # ip link set eth2 master br0
+    # ip link set eth3 master br0
+    # bridge vlan add vid 2 dev eth2 pvid untagged
+    # bridge vlan add vid 2 dev eth3 pvid untagged
+    # bridge vlan del vid 1 dev eth2
+    # bridge vlan del vid 1 dev eth3
 
 To see static and learned MAC addresses (c.f. the `arp` command):
 
@@ -140,78 +153,79 @@ To see static and learned MAC addresses (c.f. the `arp` command):
     00:e0:4c:68:03:06 dev eth1 vlan 1 master br0 permanent
     00:e0:4c:68:03:06 dev eth1 master br0 permanent
     33:33:00:00:00:01 dev eth1 self permanent
+	...
     33:33:00:00:00:01 dev br0 self permanent
 
-- [bridge(8)](http://man7.org/linux/man-pages/man8/bridge.8.html)
+In our use-case we have two different VLANs, so we need to change the
+bridge port itself to be a *tagged* VLAN member, otherwise we cannot
+distinguish between frames on different VLANs and thus cannot set up
+our VLAN interfaces on top, like this:
 
-As you could see above, all ports are by default added as untagged
-members of VLAN 1, and that including the bridge itself.  For our
-use-case we want the bridge itself to be a *tagged* member, so we
-can have multiple VLAN interfaces on top, like this:
+        vlan1     vlan2      Layer-3 :: IP Networking
+             \   /           -------------------------------
+              br0
+         ______|_______      Layer-2 :: Switching
+        [#_#_#_#_#_#_#] 
+        /  |   :  |    \     -------------------------------
+    eth0 eth1  : eth2 eth3   Layer-1 :: Link layer
+               :
+      VLAN 1   :    VLAN 2
 
-       vlan1     vlan2      Layer-3 :: IP Networking
-            \   /        -------------------------------
-             br0
-          ____|____         Layer-2 :: Switching
-         [#_#_#_#_#] 
-         /    |    \     -------------------------------
-     eth0   eth1    eth2    Layer-1 :: Link layer
-	
-The image shows a second VLAN interface and a third port that are not
-part of this HowTo.  See below for a discussion of Advanced VLANs.
-
-Let's change br0 to be a tagged member of VLAN 1:
+Let's change br0 to be a tagged member of VLAN 1 and 2:
 
     # bridge vlan add vid 1 dev br0 self
+    # bridge vlan add vid 2 dev br0 self
     # bridge vlan show
     port    vlan ids
     eth0     1 PVID Egress Untagged
-    
     eth1     1 PVID Egress Untagged
-    
+    eth2     2 PVID Egress Untagged
+    eth3     2 PVID Egress Untagged
     br0      1
+             2
 
-Now we add a VLAN interface on top of `br0` so we can communicate with
-the outside world.  Many prefer naming VLAN interfaces `br0.1`, but we
-use `vlan1` instead since we will only use one bridge:
+Now we add our VLAN interface on top of `br0` so we can communicate with
+the outside world.  Some prefer naming VLAN interfaces `br0.1`, but here
+we use `vlan1` since we will only use one bridge:
 
     # ip link add name vlan1 link br0 type vlan id 1
-    # ip addr add 192.168.2.200/24 dev vlan1
+    # ip addr add 192.168.1.1/24 dev vlan1
+    # ip link add name vlan2 link br0 type vlan id 2
+    # ip addr add 192.168.2.1/24 dev vlan2
 
 Bring everything up by taking up the bridge and its ports:
 
     # ip link set eth0 up
     # ip link set eth1 up
+    # ip link set eth2 up
+    # ip link set eth3 up
     # ip link set br0 up
-
-Add a default route to your local gateway:
-
-    # ip route add default via 192.168.2.42
 
 This is a good time to have a look at the available interfaces:
 
-	# ip link show
-    1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1000
-        link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
-    2: eth0: <NO-CARRIER,BROADCAST,MULTICAST,UP> mtu 1500 qdisc mq master br0 state DOWN mode DEFAULT group default qlen 1000
-        link/ether 00:80:e1:42:55:a3 brd ff:ff:ff:ff:ff:ff
-    4: eth1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master br0 state UP mode DEFAULT group default qlen 1000
-        link/ether 00:e0:4c:68:03:06 brd ff:ff:ff:ff:ff:ff
-    5: br0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP mode DEFAULT group default qlen 1000
-        link/ether 00:80:e1:42:55:a3 brd ff:ff:ff:ff:ff:ff
-    6: vlan1@br0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP mode DEFAULT group default qlen 1000
-        link/ether 00:80:e1:42:55:a3 brd ff:ff:ff:ff:ff:ff
+	# ip -brief link show
+    lo        UNKNOWN  00:00:00:00:00:00 <LOOPBACK,UP,LOWER_UP>
+    eth0      UP       00:80:e1:42:55:a0 <NO-CARRIER,BROADCAST,MULTICAST,UP>
+    eth1      UP       00:80:e1:42:55:a1 <BROADCAST,MULTICAST,UP,LOWER_UP>
+    eth2      UP       00:80:e1:42:55:a2 <NO-CARRIER,BROADCAST,MULTICAST,UP>
+    eth3      UP       00:80:e1:42:55:a3 <BROADCAST,MULTICAST,UP,LOWER_UP>
+    br0       UP       00:80:e1:42:55:a0 <BROADCAST,MULTICAST,UP,LOWER_UP>
+    vlan1@br0 UP       00:80:e1:42:55:a0 <BROADCAST,MULTICAST,UP,LOWER_UP> 
+    vlan2@br0 UP       00:80:e1:42:55:a0 <BROADCAST,MULTICAST,UP,LOWER_UP>
 
 As you can see, the `vlan1` interface is created on top of `br0`,
 `vlan1@br0`.  The addresses of all interfaces can be inspected with the
 `ip address` command.  For a quick overview, use the `-brief` switch:
 
     # ip -br addr show
-    lo               UNKNOWN        127.0.0.1/8 ::1/128 
-    eth0             DOWN           
-    eth1             UP             fe80::2e0:4cff:fe68:306/64 
-    br0              UP             fe80::280:e1ff:fe42:55a3/64 
-    vlan1@br0        UP             192.168.2.200/24 fe80::280:e1ff:fe42:55a3/64 
+    lo               UNKNOWN        127.0.0.1/8
+    eth0             UP             
+    eth1             UP             
+    eth2             UP             
+    eth3             UP             
+    br0              UP             
+    vlan1@br0        UP             192.168.1.1/24
+    vlan2@br0        UP             192.168.2.1/24
 
 Here we have automatically configured IPv6 addresses on eth1 and br0,
 this should be disabled since IP addresses in a our bridge setup should
@@ -259,3 +273,7 @@ Feel free to contact Westermo for more information, help designing your
 network, and hands on training on our products.
 
 Visit <https://www.westermo.com>
+
+
+
+[bridge(8)]: http://man7.org/linux/man-pages/man8/bridge.8.html
