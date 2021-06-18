@@ -32,6 +32,9 @@ Now add your interface to it:
 
     ip link set eth1 netns lab
 
+> **Note:** to move your interface back to the "root" network namespace
+> from `lab`, use `ip netns exec world ip link set eth1 netns 1`
+
 Bring up basic networking inside the namespace, remember: the loopback
 device is very important in Linux:
 
