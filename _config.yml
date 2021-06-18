@@ -30,6 +30,7 @@ plugins:
   - jekyll-archives
   - jekyll-sitemap
   - jekyll-paginate
+  - jekyll-last-modified-at
 
 permalink: /:year/:month/:day/:title/
 paginate_path: /posts/:num/
