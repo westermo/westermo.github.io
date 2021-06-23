@@ -28,7 +28,8 @@ First, create a network namespace, call it what you like:
 
     ip netns add lab
 
-Now add your interface to it:
+Now move your interface to it.  The interface will be completely removed
+from the "root" network namespace:
 
     ip link set eth1 netns lab
 
