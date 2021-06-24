@@ -104,11 +104,16 @@ hands-on with the command line!
 ## Creating a Bridge in Linux
 
 There are actually two variants of the standard bridge in mainline
-Linux; old-style and new-style.  The latter, which we will focus on,
-has native support for VLAN filtering.
+Linux; old-style and new-style.  The latter, which we will focus on in
+this blog post, has native support for VLAN filtering.
 
     # ip link add br0 type bridge
     # ip link set br0 type bridge vlan_filtering 1
+
+> **Note:** recent versions of Debian based systems, like Ubuntu, have
+> enabled bridge firewalling by default.  This may completely disable
+> all or some forwarding of traffic on bridges.  Causing a lot of head
+> scratching!  See [Bridge Forwarding Problem][] for a fix!
 
 Now, add a couple of ports to the bridge:
 
@@ -277,3 +282,4 @@ Visit <https://www.westermo.com>
 
 
 [bridge(8)]: http://man7.org/linux/man-pages/man8/bridge.8.html
+[Bridge Forwarding Problem]: /2021/06/24/bridge-forwarding-problem/
