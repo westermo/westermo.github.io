@@ -6,9 +6,9 @@ date:   2021-06-24 10:21:42 +0100
 tag: troubleshooting
 ---
 
-Recent Linux distributions (2021) have enabled Bridge Firewalling by
-default.  In particular on Ubuntu 21.04 this has been know to cause
-a fair amount of head scratching!
+Recent Linux distributions (2021) have enabled *Bridge Firewalling* by
+default.  In particular on Ubuntu 21.04 this has been known to cause a
+fair amount of head scratching!
 
 This blog post shows how to rectify the problem using `sysctl`.
 
