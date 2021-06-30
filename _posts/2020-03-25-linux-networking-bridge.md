@@ -205,6 +205,8 @@ Bring everything up by taking up the bridge and its ports:
     # ip link set eth2 up
     # ip link set eth3 up
     # ip link set br0 up
+    # ip link set vlan1 up
+    # ip link set vlan2 up
 
 This is a good time to have a look at the available interfaces:
 
