@@ -30,7 +30,7 @@ The culprits are the first three enabled bridge netfilter settings.
 They enable hooks in the bridge for trapping and dropping frames on
 different layers.
 
-We create the file `/etc/sysctl.d/90-bridge-no-filter.confg`
+We create the file `/etc/sysctl.d/90-bridge-no-filter.conf`
 by using a clever HERE script:
 
 ```
@@ -58,6 +58,6 @@ net.bridge.bridge-nf-call-iptables = 0
 ...
 ```
 
-For more information on this topic, see the following libVirt wiki page:  
-🖙 <https://wiki.libvirt.org/page/Net.bridge.bridge-nf-call_and_sysctl.conf>
+For more information on this topic, see the following libVirt wiki page:
+<https://wiki.libvirt.org/page/Net.bridge.bridge-nf-call_and_sysctl.conf>
 
