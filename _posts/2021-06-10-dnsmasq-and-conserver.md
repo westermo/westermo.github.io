@@ -56,12 +56,18 @@ bootp-dynamic
 
 dhcp-host=id:basis,set:basis
 dhcp-host=id:coronet,set:coronet
+dhcp-host=id:dagger,set:dagger
+dhcp-host=id:envoy,set:envoy
+dhcp-host=id:zero,set:zero
 
 enable-tftp
 tftp-root=/srv/ftp
 
 dhcp-boot=tag:basis,netbox-os-basis.img
 dhcp-boot=tag:coronet,netbox-os-coronet.img
+dhcp-boot=tag:dagger,netbox-os-dagger.bin
+dhcp-boot=tag:envoy,netbox-os-envoy.bin
+dhcp-boot=tag:zero,netbox-os-zero.bin
 
 dhcp-range=tag:eth1,192.168.2.100,192.168.2.199,1h
 dhcp-range=tag:usb0,192.168.2.100,192.168.2.199,1h
