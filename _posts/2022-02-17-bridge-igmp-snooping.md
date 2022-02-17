@@ -115,39 +115,16 @@ enabled by default, and start filtering when it knows more.  I.e., when
 it has snooped its first IGMP/MLD report.
 
 
-## Refresh
+## Setup
 
-Recall the picture from the [Linux Networking Bridge][] post, we will
-use a similar setup here, so if you want a refresh of the basics, see
-that post.
+The setup presented in this blog post is very limited.  There are no
+VLAN trunk ports, only a basic bridge split in two separate broadcast
+domains.  Please see the [Linux Networking Bridge][] post if you want a
+refresher of the basics.
 
-```
-  vlan1     vlan2              vlan1     vlan2
-       \   /                        \   /
-        br0  1T,2T                   br0  1T,2T,3T
-     ____|____                    ____|__________
-    [#_#_#_#_#]                  [#_#_#_#_#_#_#_#]
-    /  |      \                  /  |   |   \    \
-eth2  eth1     eth0----------eth0 eth1 eth2  eth3 eth4
- 2U    1U             1T,2T        1U   2U    3U   3U
- |     |                           |    |     |    |
- |     |                           |    |     |    |
-eth0  eth0                        eth0 eth0  eth0 eth0
-ED1   ED2                         ED3  ED4   ED5  ED6
-```
-*Figure 1: All end-devices (ED) have a single interface `eth0`*
-
-There's a lot happening in that picture, so we'll start with a slightly
-smaller example.
-
-
-## Example
-
-In this smaller example we have two VLANs, with end devices connected as
-untagged members in both VLAN 1 and 2, in factm only the `br0` "port" is
-a tagged member so we can set up our VLAN interfaces on top, which we
-name `vlan1` and `vlan2`.  See the previously mentioned blog post for
-how to set this up.
+The default setup in [NetBox][] is to have all ports in VLAN 1, so add
+the second VLAN, move the ports, and remember to set `br0` as tagged
+member of both VLANs:
 
 ```
     IP: 192.168.1.1   vlan1     vlan2   IP: 192.168.2.1
@@ -161,9 +138,9 @@ how to set this up.
                     VLAN 1   :    VLAN 2
 ```
 
-We start by enabling multicast snooping and IGMPv3 (legacy default is
-IGMPv2) proxy querier on the bridge.  This is the load bearing feature
-that we later build on:
+With the basic setup out of the way, we enable multicast snooping and
+IGMPv3 proxy querier on the bridge.  This is the load bearing feature
+that we later build on with `querierd`:
 
     $ bridge vlan global set vid 1 dev br0 mcast_snooping 1 mcast_querier 1 mcast_igmp_version 3
     $ bridge vlan global set vid 2 dev br0 mcast_snooping 1 mcast_querier 1 mcast_igmp_version 3
