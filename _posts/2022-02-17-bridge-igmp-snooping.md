@@ -1,6 +1,6 @@
 ---
 layout: post
-title:  "Linux Networking Bridge and IGMP Snooping"
+title:  "Linux Bridge and IGMP Snooping"
 author: Joachim Wiberg
 date:   2022-02-17 14:32:24 +0100
 tags:
@@ -35,8 +35,8 @@ consider:
   1. Some networks don't have a (dynamic) multicast router[^2].  Usually
      the multicast router is the IGMP/MLD querier for a LAN, but some
      LANs consist only of (industrial) switches that try their best to
-     limit the spread of multicast[^2] on low-capacity links or to end
-	 devices sensitive to too much data
+     limit the spread of multicast[^3] on low-capacity links or to end
+     devices sensitive to too much data
   2. Some end-devices discard queries with source IP 0.0.0.0.  This is
      of course wrong, but good luck telling a PLC vendor they should
      change their embedded firmware of an aging product, or even the
@@ -61,12 +61,6 @@ work, to some.
 > to get anything to work.  This is of course both unsafe and can cause
 > a lot of overload on end devices, since unregulated multicast is then
 > treated as broadcast.
-
-[^1]: Well not really, there *is* support for using the IP address of
-    the bridge, but you do not want to use that since the kernel will go
-    dumpster diving for *any* address.
-[^2]: Remember, unregulated multicast is broadcast.  Meaning you can
-    easily run into overloading your networks.
 
 
 ## IGMP/MLD
@@ -342,6 +336,21 @@ but also GMRP/MMRP for MAC based multicast subscription, and other types
 of layer-2 services and policy that don't belong in the kernel.
 
 
+## Footnotes
+
+[^1]: Well not really, there *is* support for using the IP address of
+    the bridge, but you do not want to use that since the kernel will go
+    dumpster diving for *any* address.
+
+[^2]: A multicast router can be any of the DVMRP or PIM families of
+    protocols.  Open implementations of these include, but are not
+    limited to: [mrouted][], [pimd][], [pimd-dense][], and PIM-SM/SSM in
+    [Quagga][], and [Frr][].
+
+[^3]: Remember, unregulated multicast is broadcast.  Meaning you can
+    easily run into overloading your networks.
+
+
 [tcpdump(8)]: https://www.man7.org/linux/man-pages/man8/tcpdump.8.html
 [Linux Networking Bridge]: /2020/03/25/linux-networking-bridge/
 [IGMP]:       https://datatracker.ietf.org/doc/html/rfc3376
@@ -350,4 +359,7 @@ of layer-2 services and policy that don't belong in the kernel.
 [NetBox]:     https://github.com/westermo/netbox/
 [mrouted]:    https://github.com/troglobit/mrouted/
 [pimd]:       https://github.com/troglobit/pimd/
+[pimd-dense]: https://github.com/troglobit/pimd-dense/
 [pim6sd]:     https://github.com/troglobit/pim6sd/
+[Quagga]:     https://quagga.net/
+[Frr]:        https://frrouting.org/
