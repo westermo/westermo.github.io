@@ -33,7 +33,9 @@ simplified approach offered by NetBox.
 > "Toolchain" menu, and "build packages with debugging symbols" in the
 > "Build options" menu.
 
-## Qemu
+
+Starting Qemu
+-------------
 
 Thanks to the insanely powerful laptops developers have today, it's
 possible to come very close to the actual HW performance when emulating
@@ -63,7 +65,8 @@ The `...` marks other arguments.  See the [qemu wrapper script][qemu]
 for details.
 
 
-## gdbserver
+Starting gdbserver
+------------------
 
 When the target system boots (in Qemu), we start `gdbserver` with the
 argument `/dev/hvc1` which is what allows us to connect to the target.
@@ -88,7 +91,8 @@ tell Finit to activate the change.
 > developing a system.
 
 
-## Basic GDB Setup
+Basic GDB Setup
+---------------
 
 So, now we're almost there, ready to fire up gdb and connect to the
 target system!  Just one small hurdle left to clear, you need the
@@ -122,7 +126,8 @@ quite tedious, you can save this to a `.gdbinit` file, which gdb loads
 when starting up.  This is what we've done to simplify things in NetBox.
 
 
-## Simplified GDB with NetBox 
+Simplified GDB with NetBox 
+--------------------------
 
 NetBox leverages the `$O` variable in Buildroot, and this is core to the
 top level `Makefile` of NetBox.  It knows what target you are building
@@ -143,6 +148,7 @@ issue the appropriate commands (NetBox extensions):
     Continuing.
 
 
-[NetBox]: https://github.com/westermo/netbox/
-[qemu]:   https://github.com/westermo/netbox/blob/master/utils/qemu
-[really]: https://www.urbandictionary.com/define.php?term=4711
+[Buildroot]: https://buildroot.org/
+[NetBox]:    https://github.com/westermo/netbox/
+[qemu]:      https://github.com/westermo/netbox/blob/master/utils/qemu
+[really]:    https://www.urbandictionary.com/define.php?term=4711
