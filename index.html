@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="en">
+
+  <head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  
+  
+  <title>Westermo Labs</title>
+  <meta name="description" content="Ramblings of software engineers building networking hardware using Linux">
+  
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://westermo.github.io/">
+  
+  
+  <link rel="alternate" type="application/rss+xml" title="Westermo Labs" href="https://westermo.github.io/feed.xml">
+
+  
+
+  
+  <meta property="og:title" content="Westermo Labs">
+  <meta property="og:site_name" content="Westermo Labs">
+  <meta property="og:url" content="https://westermo.github.io/">
+  <meta property="og:description" content="Ramblings of software engineers building networking hardware using Linux">
+  
+  
+  <meta name="twitter:card" content="summary">
+  
+  <meta name="twitter:title" content="Westermo Labs">
+  <meta name="twitter:description" content="Ramblings of software engineers building networking hardware using Linux">
+  
+  
+
+  <link rel="dns-prefetch" href="https://fonts.gstatic.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bitter:ital,wght@0,400;0,700;1,400&amp;display=swap" rel="stylesheet">
+
+  
+
+</head>
+
+
+  <body>
+
+    <header class="site-header">
+
+  <div class="wrapper">
+
+    <a class="site-title" href="/">Westermo Labs</a>
+
+    <nav class="site-nav">
+      
+        
+        <a class="page-link" href="/about/">About</a>
+      
+        
+        <a class="page-link" href="/archives/">Archives</a>
+      
+        
+        <a class="page-link" href="https://github.com/westermo/">GitHub</a>
+      
+    </nav>
+
+  </div>
+
+</header>
+
+
+    <main class="page-content" aria-label="Content">
+      <div class="wrapper">
+        <div class="home">
+
+  
+
+  
+
+  <ul class="post-list">
+    
+      
+      
+
+      <li>
+        <header class="post-header">
+          <h1 class="post-title">
+            
+              <a class="post-link" href="/2022/02/18/debugging-embedded-systems/">Tools of the Trade :: Debugging an embedded system</a>
+            
+          </h1>
+
+          <p class="post-meta">
+            Feb 18, 2022
+            
+              
+
+ •
+  
+    
+    
+      
+    
+      
+        <a href="/tags/howto/">howto</a>,
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  
+    
+    
+      
+    
+      
+    
+      
+        <a href="/tags/tools/">tools</a>,
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  
+    
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+        <a href="/tags/gdb/">gdb</a>,
+      
+    
+      
+    
+      
+    
+      
+    
+  
+    
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+        <a href="/tags/gdbserver/">gdbserver</a>,
+      
+    
+      
+    
+      
+    
+  
+    
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+        <a href="/tags/buildroot/">buildroot</a>
+      
+    
+      
+    
+  
+
+
+            
+            
+          </p>
+        </header>
+
+        <div class="post-content">
+          <p>This post shows how to debug an embedded system with gdbserver.  We will
+run the <a href="https://buildroot.org/">Buildroot</a> derivative <a href="https://github.com/westermo/netbox/">NetBox</a> in Qemu to debug a program
+that segfaults.</p>
+
+<blockquote>
+  <p>Throughout this blog post, the nomenclature for command prompts is:<br />
+  <code class="language-plaintext highlighter-rouge"># foo</code> run command <code class="language-plaintext highlighter-rouge">foo</code> as root on the target system<br />
+  <code class="language-plaintext highlighter-rouge">$ bar</code> run command <code class="language-plaintext highlighter-rouge">bar</code> as your own user on the host system</p>
+</blockquote>
+
+
+        </div>
+        
+          <p class="post-continue">
+            <a href="/2022/02/18/debugging-embedded-systems/">Read on &rarr;</a>
+          </p>
+        
+      </li>
+    
+      
+      
+
+      <li>
+        <header class="post-header">
+          <h1 class="post-title">
+            
+              <a class="post-link" href="/2022/02/17/bridge-igmp-snooping/">Linux Bridge and IGMP Snooping</a>
+            
+          </h1>
+
+          <p class="post-meta">
+            Feb 17, 2022
+            
+              
+
+ •
+  
+    
+    
+      
+    
+      
+        <a href="/tags/howto/">howto</a>,
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  
+    
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+        <a href="/tags/bridge/">bridge</a>
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  
+
+
+            
+            
+          </p>
+        </header>
+
+        <div class="post-content">
+          <p>This is the third post in a series of blog posts showing how to set up
+networking in Linux using low-level tools.</p>
+
+<p>In this part we talk about limiting the broadcast effects of multicast
+using IGMP/MLD snooping in the Linux bridge (software switch).  Our
+context, as usual, is industrial networking with a focus on embedded
+devices.</p>
+
+
+        </div>
+        
+          <p class="post-continue">
+            <a href="/2022/02/17/bridge-igmp-snooping/">Read on &rarr;</a>
+          </p>
+        
+      </li>
+    
+      
+      
+
+      <li>
+        <header class="post-header">
+          <h1 class="post-title">
+            
+              <a class="post-link" href="/2021/06/24/bridge-forwarding-problem/">Bridge Forwarding Problem</a>
+            
+          </h1>
+
+          <p class="post-meta">
+            Jun 24, 2021
+            
+              
+
+ •
+  
+    
+    
+      
+    
+      
+    
+      
+    
+      
+        <a href="/tags/troubleshooting/">troubleshooting</a>
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  
+
+
+            
+            
+          </p>
+        </header>
+
+        <div class="post-content">
+          <p>Recent Linux distributions (2021) have enabled <em>Bridge Firewalling</em> by
+default.  In particular on Ubuntu 21.04 this has been known to cause a
+fair amount of head scratching!</p>
+
+<p>This blog post shows how to rectify the problem using <code class="language-plaintext highlighter-rouge">sysctl</code>.</p>
+
+
+        </div>
+        
+          <p class="post-continue">
+            <a href="/2021/06/24/bridge-forwarding-problem/">Read on &rarr;</a>
+          </p>
+        
+      </li>
+    
+      
+      
+
+      <li>
+        <header class="post-header">
+          <h1 class="post-title">
+            
+              <a class="post-link" href="/2021/06/18/network-namespaces/">Tools of the Trade :: net namespaces</a>
+            
+          </h1>
+
+          <p class="post-meta">
+            Jun 18, 2021
+            
+              
+
+ •
+  
+    
+    
+      
+    
+      
+        <a href="/tags/howto/">howto</a>,
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  
+    
+    
+      
+    
+      
+    
+      
+        <a href="/tags/tools/">tools</a>
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  
+
+
+            
+            
+          </p>
+        </header>
+
+        <div class="post-content">
+          <p>This post shows how you can easily use Linux <em>network namespaces</em> to
+isolate one or more physical (or virtual) network interfaces from the
+rest of your system.  Super useful when debugging network problems or
+developing networking applications.</p>
+
+
+        </div>
+        
+          <p class="post-continue">
+            <a href="/2021/06/18/network-namespaces/">Read on &rarr;</a>
+          </p>
+        
+      </li>
+    
+      
+      
+
+      <li>
+        <header class="post-header">
+          <h1 class="post-title">
+            
+              <a class="post-link" href="/2021/06/12/ping-and-tcpdump/">Tools of the Trade :: ping &amp; tcpdump</a>
+            
+          </h1>
+
+          <p class="post-meta">
+            Jun 12, 2021
+            
+              
+
+ •
+  
+    
+    
+      
+    
+      
+        <a href="/tags/howto/">howto</a>,
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  
+    
+    
+      
+    
+      
+    
+      
+        <a href="/tags/tools/">tools</a>
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  
+
+
+            
+            
+          </p>
+        </header>
+
+        <div class="post-content">
+          <p>Continuing the series with another set of really useful tools to know:
+<a href="https://www.man7.org/linux/man-pages/man8/ping.8.html">ping(8)</a> and
+<a href="https://www.man7.org/linux/man-pages/man8/tcpdump.8.html">tcpdump(8)</a>.
+They can be used to localize issues in just about any network setup.</p>
+
+<p>Ping is capable of generating unicast, multicast, and broadcast traffic.
+While tcpdump is capable of capturing, formatting, <em>and most importantly
+filtering</em> all types of traffic.</p>
+
+
+        </div>
+        
+          <p class="post-continue">
+            <a href="/2021/06/12/ping-and-tcpdump/">Read on &rarr;</a>
+          </p>
+        
+      </li>
+    
+  </ul>
+
+  
+  <div class="pagination">
+    
+      <a class="previous" href="/posts/2/">&laquo; Older</a>
+    
+
+    
+  </div>
+
+
+
+</div>
+
+      </div>
+    </main>
+
+    <footer class="site-footer">
+
+  <div class="wrapper">
+
+    <p>
+      
+
+&copy; Westermo Engineers - Powered by <a href="https://jekyllrb.com">Jekyll</a> &amp; <a href="https://github.com/yous/whiteglass">whiteglass</a> - Subscribe via <a href="https://westermo.github.io/feed.xml">RSS</a>
+
+    </p>
+
+  </div>
+
+</footer>
+
+
+  </body>
+
+</html>

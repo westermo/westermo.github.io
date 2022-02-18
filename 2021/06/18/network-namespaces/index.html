@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+
+  <head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  
+  
+  <title>Tools of the Trade :: net namespaces</title>
+  <meta name="description" content="This post shows how you can easily use Linux network namespaces to isolate one or more physical (or virtual) network interfaces from the rest of your system. Super useful when debugging network problems or developing networking applications.">
+  
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://westermo.github.io/2021/06/18/network-namespaces/">
+  
+  
+  <link rel="alternate" type="application/rss+xml" title="Westermo Labs" href="https://westermo.github.io/feed.xml">
+
+  
+
+  
+  <meta property="og:title" content="Tools of the Trade :: net namespaces">
+  <meta property="og:site_name" content="Westermo Labs">
+  <meta property="og:url" content="https://westermo.github.io/2021/06/18/network-namespaces/">
+  <meta property="og:description" content="This post shows how you can easily use Linux network namespaces to isolate one or more physical (or virtual) network interfaces from the rest of your system. Super useful when debugging network problems or developing networking applications.">
+  
+  
+  <meta name="twitter:card" content="summary">
+  
+  <meta name="twitter:title" content="Tools of the Trade :: net namespaces">
+  <meta name="twitter:description" content="This post shows how you can easily use Linux network namespaces to isolate one or more physical (or virtual) network interfaces from the rest of your system. Super useful when debugging network pro...">
+  
+  
+
+  <link rel="dns-prefetch" href="https://fonts.gstatic.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bitter:ital,wght@0,400;0,700;1,400&amp;display=swap" rel="stylesheet">
+
+  
+
+</head>
+
+
+  <body>
+
+    <header class="site-header">
+
+  <div class="wrapper">
+
+    <a class="site-title" href="/">Westermo Labs</a>
+
+    <nav class="site-nav">
+      
+        
+        <a class="page-link" href="/about/">About</a>
+      
+        
+        <a class="page-link" href="/archives/">Archives</a>
+      
+        
+        <a class="page-link" href="https://github.com/westermo/">GitHub</a>
+      
+    </nav>
+
+  </div>
+
+</header>
+
+
+    <main class="page-content" aria-label="Content">
+      <div class="wrapper">
+        <article class="post" itemscope itemtype="http://schema.org/BlogPosting">
+
+  <header class="post-header">
+    
+      <h1 class="post-title" itemprop="name headline">Tools of the Trade :: net namespaces</h1>
+    
+    <p class="post-meta"><time datetime="2021-06-18T06:24:42+02:00" itemprop="datePublished">Jun 18, 2021</time> • <span itemprop="author" itemscope itemtype="http://schema.org/Person"><span itemprop="name">Joachim Wiberg</span></span>
+
+ •
+  
+    
+    
+      
+    
+      
+        <a href="/tags/howto/">howto</a>,
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  
+    
+    
+      
+    
+      
+    
+      
+        <a href="/tags/tools/">tools</a>
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  
+
+</p>
+  </header>
+
+  <div class="post-content" itemprop="articleBody">
+    <p>This post shows how you can easily use Linux <em>network namespaces</em> to
+isolate one or more physical (or virtual) network interfaces from the
+rest of your system.  Super useful when debugging network problems or
+developing networking applications.</p>
+
+<!-- more -->
+
+<blockquote>
+  <p>Note: all commands here may require the use of <code class="language-plaintext highlighter-rouge">sudo</code>, unless you have
+<a href="https://troglobit.com/2016/12/11/a-life-without-sudo/">capabilities</a>
+enabled for your user, for certain commands.  Try to avoid running as
+root, it can be avoided and saves you from a lot of headache.</p>
+</blockquote>
+
+<h2>Setup</h2>
+
+<p>First, create a network namespace, call it what you like:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ip netns add lab
+</code></pre></div></div>
+
+<p>Now move your interface to it.  The interface will be completely removed
+from the “root” network namespace:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ip link set eth1 netns lab
+</code></pre></div></div>
+
+<blockquote>
+  <p><strong>Note:</strong> to move your interface back to the “root” network namespace
+from <code class="language-plaintext highlighter-rouge">lab</code>, use <code class="language-plaintext highlighter-rouge">ip netns exec world ip link set eth1 netns 1</code></p>
+</blockquote>
+
+<p>Bring up basic networking inside the namespace, remember: the loopback
+device is very important in Linux:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ip netns exec lab ip addr add 127.0.0.1/8 dev lo
+ip netns exec lab ip link set lo up
+</code></pre></div></div>
+
+<p>I like to consider the netns as an end-device, so I usually rename the
+interface, which makes scripting after this point easier as well:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ip netns exec lab ip link set eth1 down
+ip netns exec lab ip link set eth1 name eth0
+</code></pre></div></div>
+
+<p>You can also, optionally, add one or more VLAN interface(s) here, useful
+when you want to debug VLAN trunks.  Remember, if you add a VLAN in this
+step, make sure to use the <code class="language-plaintext highlighter-rouge">eth0.1</code> name in all the commands below this:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ip netns exec lab ip link add link eth0 name eth0.1 type vlan id 1
+</code></pre></div></div>
+
+<p>At this point we can bring the interface(s) up and set IP address and
+routes on them, like this:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ip netns exec lab ip link set eth1 up
+ip netns exec lab ip addr add 192.168.2.42/24 dev eth1
+
+ip netns exec lab ip rout add 192.168.2.0/24 dev eth1
+ip netns exec lab ip rout add default via 192.168.2.1   # optional!
+</code></pre></div></div>
+
+<p>It’s starting to get quite tedious to type <code class="language-plaintext highlighter-rouge">ip netns exec lab ...</code> all
+the time.  So let’s start a shell inside the namespace, it’s almost like
+a proper container:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ip netns exec lab bash
+</code></pre></div></div>
+
+<p>Type <code class="language-plaintext highlighter-rouge">ifconfig</code> or <code class="language-plaintext highlighter-rouge">ip link</code> and <code class="language-plaintext highlighter-rouge">ip addr</code> to see your setup.  You are
+completely isolated now from all the other network interfaces on your
+system.  From here on you can run <a href="/2021/06/12/ping-and-tcpdump/">ping and tcpdump</a> freely without
+having to worry about your ping packets not properly egressing the right
+interface, or not catching all traffic that’s actually on the wire.</p>
+
+<h2>Concluding Remarks</h2>
+
+<p>When you exit your shell session and leave the network namespace, you
+may want to clean up and restore your interface back to the system:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code># Restore original name (avoid clashing when moving it back)
+ip netns exec lab ip link set eth0 down
+ip netns exec lab ip link set eth0 name eth1
+ip netns exec lab ip link set eth1 up
+
+# Remove the network namespace (loopback removed automatically)
+ip netns del lab
+</code></pre></div></div>
+
+<p>Now, as an exercise, put all these commands in a script so you can more
+easily and safely repeat this every time you need it.  I have a script
+called <code class="language-plaintext highlighter-rouge">~/bin/usenet</code>, which I call with <code class="language-plaintext highlighter-rouge">sudo usenet eth1</code> :-)</p>
+
+
+  </div>
+
+  
+
+</article>
+
+      </div>
+    </main>
+
+    <footer class="site-footer">
+
+  <div class="wrapper">
+
+    <p>
+      
+
+&copy; Westermo Engineers - Powered by <a href="https://jekyllrb.com">Jekyll</a> &amp; <a href="https://github.com/yous/whiteglass">whiteglass</a> - Subscribe via <a href="https://westermo.github.io/feed.xml">RSS</a>
+
+    </p>
+
+  </div>
+
+</footer>
+
+
+  </body>
+
+</html>

@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+
+  <head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  
+  
+  <title>Tools of the Trade :: dnsmasq &amp; console</title>
+  <meta name="description" content="This is the first post, in hopefully a series, detailing tools we networking and switch geeks love. We start with the underrated and oft forgotten dnsmasq and conserver. dnsmasq will be used to hand out BOOTP/DHCP leases to our embedded systems, as well as serve firmware images using TFTP conserver will be used to connect to our device’s console port so we can access the bootloader and net-boot it from dnsmasq">
+  
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://westermo.github.io/2021/06/10/dnsmasq-and-conserver/">
+  
+  
+  <link rel="alternate" type="application/rss+xml" title="Westermo Labs" href="https://westermo.github.io/feed.xml">
+
+  
+
+  
+  <meta property="og:title" content="Tools of the Trade :: dnsmasq &amp; console">
+  <meta property="og:site_name" content="Westermo Labs">
+  <meta property="og:url" content="https://westermo.github.io/2021/06/10/dnsmasq-and-conserver/">
+  <meta property="og:description" content="This is the first post, in hopefully a series, detailing tools we networking and switch geeks love. We start with the underrated and oft forgotten dnsmasq and conserver. dnsmasq will be used to hand out BOOTP/DHCP leases to our embedded systems, as well as serve firmware images using TFTP conserver will be used to connect to our device’s console port so we can access the bootloader and net-boot it from dnsmasq">
+  
+  
+  <meta name="twitter:card" content="summary">
+  
+  <meta name="twitter:title" content="Tools of the Trade :: dnsmasq &amp; console">
+  <meta name="twitter:description" content="This is the first post, in hopefully a series, detailing tools we networking and switch geeks love. We start with the underrated and oft forgotten dnsmasq and conserver. dnsmasq will be used to han...">
+  
+  
+
+  <link rel="dns-prefetch" href="https://fonts.gstatic.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bitter:ital,wght@0,400;0,700;1,400&amp;display=swap" rel="stylesheet">
+
+  
+
+</head>
+
+
+  <body>
+
+    <header class="site-header">
+
+  <div class="wrapper">
+
+    <a class="site-title" href="/">Westermo Labs</a>
+
+    <nav class="site-nav">
+      
+        
+        <a class="page-link" href="/about/">About</a>
+      
+        
+        <a class="page-link" href="/archives/">Archives</a>
+      
+        
+        <a class="page-link" href="https://github.com/westermo/">GitHub</a>
+      
+    </nav>
+
+  </div>
+
+</header>
+
+
+    <main class="page-content" aria-label="Content">
+      <div class="wrapper">
+        <article class="post" itemscope itemtype="http://schema.org/BlogPosting">
+
+  <header class="post-header">
+    
+      <h1 class="post-title" itemprop="name headline">Tools of the Trade :: dnsmasq &amp; console</h1>
+    
+    <p class="post-meta"><time datetime="2021-06-10T17:37:42+02:00" itemprop="datePublished">Jun 10, 2021</time> • <span itemprop="author" itemscope itemtype="http://schema.org/Person"><span itemprop="name">Joachim Wiberg</span></span>
+
+ •
+  
+    
+    
+      
+    
+      
+        <a href="/tags/howto/">howto</a>,
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  
+    
+    
+      
+    
+      
+    
+      
+        <a href="/tags/tools/">tools</a>
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  
+
+</p>
+  </header>
+
+  <div class="post-content" itemprop="articleBody">
+    <p>This is the first post, in hopefully a series, detailing tools we
+networking and switch geeks love.  We start with the underrated
+and oft forgotten dnsmasq and conserver.</p>
+
+<ul>
+  <li>
+    <p><a href="https://thekelleys.org.uk/dnsmasq/doc.html">dnsmasq</a> will be used
+to hand out BOOTP/DHCP leases to our embedded systems, as well as
+serve firmware images using TFTP</p>
+  </li>
+  <li>
+    <p><a href="https://www.conserver.com/">conserver</a> will be used to connect to
+our device’s console port so we can access the bootloader and
+net-boot it from dnsmasq</p>
+  </li>
+</ul>
+
+<!-- more -->
+
+<h2>Install</h2>
+
+<p>Westermo is almost exclusively a Debian/Ubuntu and Linux Mint shop, so
+all package install will be done using <code class="language-plaintext highlighter-rouge">apt</code>, the same packages exist in
+other Linux distros as well.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>sudo apt install dnsmasq conserver-server conserver-client
+</code></pre></div></div>
+
+<p>Done.  We now proceed to configure the daemons, please note, this is
+only an example and you can set them up in a myriad of ways.</p>
+
+<h2>Configure dnsmasq</h2>
+
+<p>Some systems may have dnsmasq installed, either the system itself uses
+it as a caching DNS (not mentioned in this blog post), or you have
+libVirt and virt-manager installed.  That is fine, this blog post allows
+you to have multiple configurations running at the same time, yet still
+be quite user friendly.</p>
+
+<p>The traditional <code class="language-plaintext highlighter-rouge">/etc/dnsmasq.conf</code> has today mostly been replaced with
+the new <code class="language-plaintext highlighter-rouge">/etc/dnsmasq.d/</code> directory where you can add multiple files.</p>
+
+<p>Let’s create <code class="language-plaintext highlighter-rouge">/etc/dnsmasq.d/foo.conf</code>, please note the interface names
+are for my PC, yours may be very different:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code># You may need to uncomment this, depending on other
+# services also using dnsmasq
+#bind-dynamic
+bootp-dynamic
+
+dhcp-host=id:basis,set:basis
+dhcp-host=id:coronet,set:coronet
+dhcp-host=id:dagger,set:dagger
+dhcp-host=id:envoy,set:envoy
+dhcp-host=id:zero,set:zero
+
+enable-tftp
+tftp-root=/srv/ftp
+
+dhcp-boot=tag:basis,netbox-os-basis.img
+dhcp-boot=tag:coronet,netbox-os-coronet.img
+dhcp-boot=tag:dagger,netbox-os-dagger.bin
+dhcp-boot=tag:envoy,netbox-os-envoy.bin
+dhcp-boot=tag:zero,netbox-os-zero.bin
+
+dhcp-range=tag:eth1,192.168.2.100,192.168.2.199,1h
+dhcp-range=tag:usb0,192.168.2.100,192.168.2.199,1h
+dhcp-range=tag:usb1,192.168.2.100,192.168.2.199,1h
+
+except-interface=lo
+except-interface=eth0
+</code></pre></div></div>
+
+<blockquote>
+  <p><strong>NOTE:</strong> You <em>need</em> to change the interface name in <code class="language-plaintext highlighter-rouge">dhcp-range</code>
+to match <em>your interface(s)</em>. These interfaces also need to have
+an IP address in the same subnet as used above, or change the
+DHCP range to match your interface(s).</p>
+</blockquote>
+
+<p>The <a href="(https://thekelleys.org.uk/dnsmasq/docs/dnsmasq-man.html)">dnsmasq(8)</a> manual page is the authoritative documentation, so
+check that for the syntax of each command.  This blog post will only
+skim through the most important settings.</p>
+
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">enable-tftp</code> and <code class="language-plaintext highlighter-rouge">tftp-root</code> enables the built-in TFTP server,
+this is where dnsmasq expects the bootfiles to reside</li>
+  <li><code class="language-plaintext highlighter-rouge">dhcp-host</code> matches the DHCP ClientID, sent by our bootloader,
+<a href="https://barebox.org/">BareBox</a>.  This sets the <code class="language-plaintext highlighter-rouge">tag</code>, which can be used to associate
+DHCP options to matching clients</li>
+  <li><code class="language-plaintext highlighter-rouge">dhcp-boot</code> enables both DHCP option 66 (boot server) and option 67
+(bootfile) and is set to one of the two files based on what host is
+matched in the previous step</li>
+  <li><code class="language-plaintext highlighter-rouge">dhcp-range</code> is the range of IP addresses to hand out to clients as
+their DHCP lease, based on the interface where the DHCP Discover is
+received on.  In our example, only three interfaces are allowed to
+serve DHCP on: <code class="language-plaintext highlighter-rouge">eth1</code>, <code class="language-plaintext highlighter-rouge">usb0</code>, and <code class="language-plaintext highlighter-rouge">usb1</code></li>
+  <li><code class="language-plaintext highlighter-rouge">except-interface</code> is probably the <em>most important</em> setting here,
+it ensures we do not accidentally start service DHCP leases on our
+home or office network …</li>
+</ul>
+
+<p>Enable the configuration by restarting the daemon:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>sudo systemctl restart dnsmasq.service
+</code></pre></div></div>
+
+<h2>Configure conserver</h2>
+
+<p>Modify the file <code class="language-plaintext highlighter-rouge">/etc/conserver/conserver.cf</code> to look something like this:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>config * {
+}
+
+access * {
+        trusted 127.0.0.1;
+#       trusted wkz-wmo.local;
+#       trusted 192.168.0.0/16;
+#       allowed 192.168.0.0/16;
+}
+
+default full {
+        rw *;
+}
+
+# The '&amp;' in logfile name is substituted with the console name.
+default * {
+        logfile /var/log/conserver/&amp;.log;
+        timestamp "";
+        include full;
+        options reinitoncc;
+}
+
+default ser {
+        type device;
+        device /dev/X;
+        devicesubst X=cs;
+        baud 115200;
+        parity none;
+        options !ixon,!ixoff;
+        master localhost;
+}
+
+console ttyS0   { include ser; }
+console ttyUSB0 { include ser; }
+console ttyUSB1 { include ser; }
+console ttyUSB2 { include ser; }
+console ttyUSB3 { include ser; }
+console ttyUSB4 { include ser; }
+console ttyUSB5 { include ser; }
+console ttyUSB6 { include ser; }
+console ttyACM0 { include ser; }
+console ttyACM1 { include ser; }
+console ttyACM2 { include ser; }
+console ttyACM3 { include ser; }
+</code></pre></div></div>
+
+<p>Enable the configuration by restarting the daemon:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>sudo systemctl restart conserver-server.service
+</code></pre></div></div>
+
+<h2>Running</h2>
+
+<p>With an embedded device connected to your PC, here <code class="language-plaintext highlighter-rouge">/dev/ttyUSB0</code> (see
+<code class="language-plaintext highlighter-rouge">sudo dmesg</code> to find the TTY name of the device you plugged in):</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>console ttyUSB0
+</code></pre></div></div>
+
+<blockquote>
+  <p>Use <code class="language-plaintext highlighter-rouge">^ec?</code> to get help, i.e. hold down <code class="language-plaintext highlighter-rouge">Ctrl</code> and press <code class="language-plaintext highlighter-rouge">e</code> <code class="language-plaintext highlighter-rouge">c</code> <code class="language-plaintext highlighter-rouge">?</code></p>
+</blockquote>
+
+<p>Westermo devices can load their firmware over the network if you stop
+the bootloader early with <code class="language-plaintext highlighter-rouge">^C</code>, i.e. hold down <code class="language-plaintext highlighter-rouge">Ctrl</code> and press <code class="language-plaintext highlighter-rouge">c</code>
+until you get to the boot menu, where you select <em>Shell</em>.  Here you
+can use all <a href="https://barebox.org/">BareBox</a> commands, or call our factory default scripts
+to start network boot:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>boot net
+</code></pre></div></div>
+
+<p>This tells the bootloader to first send a DHCP Discover request to our
+DHCP server (dnsmasq), which then hands out a DHCP Lease with options
+66 and 67 detailing where to fetch the firmware.  The bootloader then
+proceeds to connect to dnsmasq again, this time using TFTP, to fetch
+the file.  When the file has been retrieved, its checksum is validated
+before it is mounted by BareBox and the kernel extracted from <code class="language-plaintext highlighter-rouge">/boot</code>
+inside the firmware image.  Then we’re off!</p>
+
+
+  </div>
+
+  
+
+</article>
+
+      </div>
+    </main>
+
+    <footer class="site-footer">
+
+  <div class="wrapper">
+
+    <p>
+      
+
+&copy; Westermo Engineers - Powered by <a href="https://jekyllrb.com">Jekyll</a> &amp; <a href="https://github.com/yous/whiteglass">whiteglass</a> - Subscribe via <a href="https://westermo.github.io/feed.xml">RSS</a>
+
+    </p>
+
+  </div>
+
+</footer>
+
+
+  </body>
+
+</html>

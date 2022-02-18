@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+
+  <head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  
+  
+  <title>Running Foreign Containers on LXD</title>
+  <meta name="description" content="">
+  
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://westermo.github.io/2020/03/02/running-foreign-containers-on-lxd/">
+  
+  
+  <link rel="alternate" type="application/rss+xml" title="Westermo Labs" href="https://westermo.github.io/feed.xml">
+
+  
+
+  
+  <meta property="og:title" content="Running Foreign Containers on LXD">
+  <meta property="og:site_name" content="Westermo Labs">
+  <meta property="og:url" content="https://westermo.github.io/2020/03/02/running-foreign-containers-on-lxd/">
+  <meta property="og:description" content="">
+  
+  
+  <meta name="twitter:card" content="summary">
+  
+  <meta name="twitter:title" content="Running Foreign Containers on LXD">
+  <meta name="twitter:description" content="">
+  
+  
+
+  <link rel="dns-prefetch" href="https://fonts.gstatic.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bitter:ital,wght@0,400;0,700;1,400&amp;display=swap" rel="stylesheet">
+
+  
+
+</head>
+
+
+  <body>
+
+    <header class="site-header">
+
+  <div class="wrapper">
+
+    <a class="site-title" href="/">Westermo Labs</a>
+
+    <nav class="site-nav">
+      
+        
+        <a class="page-link" href="/about/">About</a>
+      
+        
+        <a class="page-link" href="/archives/">Archives</a>
+      
+        
+        <a class="page-link" href="https://github.com/westermo/">GitHub</a>
+      
+    </nav>
+
+  </div>
+
+</header>
+
+
+    <main class="page-content" aria-label="Content">
+      <div class="wrapper">
+        <article class="post" itemscope itemtype="http://schema.org/BlogPosting">
+
+  <header class="post-header">
+    
+      <h1 class="post-title" itemprop="name headline">Running Foreign Containers on LXD</h1>
+    
+    <p class="post-meta"><time datetime="2020-03-02T15:43:00+01:00" itemprop="datePublished">Mar 2, 2020</time> • <span itemprop="author" itemscope itemtype="http://schema.org/Person"><span itemprop="name">Tobias Waldekranz</span></span> •
+  
+    
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+        <a href="/categories/containers/">containers</a>
+      
+    
+  
+
+
+
+</p>
+  </header>
+
+  <div class="post-content" itemprop="articleBody">
+    <!-- more -->
+
+<p>Recently, we added LXD support to <a href="https://github.com/myrootfs/myrootfs">myrootfs</a>, to make it easy to test
+a container on your local machine before deploying it to the target
+device.  In addition to wrapping the basics of importing images and
+launching containers, there is also support for handling containers of
+foreign architectures.  This is very useful in embedded scenarios, as it
+allows you to test your container on your development system before
+deploying to the target.</p>
+
+<p>All of this has been integrated to <a href="https://github.com/myrootfs/myrootfs">myrootfs</a> so that you don’t have
+worry about it. This post is a behind-the-scenes look at how LXD can be
+configured to make it work.</p>
+
+<h2>Native Container</h2>
+
+<p>We’ll start easy, creating a native container (i.e. <code class="language-plaintext highlighter-rouge">x86_64</code> in my
+case):</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ make ARCH=x86 defconfig &amp;&amp; make
+</code></pre></div></div>
+
+<p>Once this is done we’ll have a SquashFS image available in
+<code class="language-plaintext highlighter-rouge">images/</code>. In order to import it to LXD, we create a <code class="language-plaintext highlighter-rouge">metadata.yaml</code>
+file to describe it:</p>
+
+<div class="language-yaml highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="na">architecture</span><span class="pi">:</span> <span class="s">x86_64</span>
+<span class="na">creation_date</span><span class="pi">:</span> <span class="m">1582833008</span>
+<span class="na">properties</span><span class="pi">:</span>
+  <span class="na">os</span><span class="pi">:</span> <span class="s">myrootfs</span>
+  <span class="na">release</span><span class="pi">:</span> <span class="s">1.0.0</span>
+  <span class="na">description</span><span class="pi">:</span> <span class="s">myrootfs-1.0.0</span>
+</code></pre></div></div>
+
+<p>LXD expects the metadata in a tarball, to we’ll put it in one:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ tar caf metadata.tar.gz metadata.yaml
+</code></pre></div></div>
+
+<p>Then we can import it to LXD:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ lxc image import --alias myrootfs metadata.tar.gz myrootfs.img
+</code></pre></div></div>
+
+<p>Now we can create a container and attach to it:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ lxc launch -e myrootfs
+Creating the instance
+Instance name is: firm-kite
+Starting firm-kite
+~/src/github.com/myrootfs/myrootfs/images(master)$ lxc console firm-kite
+To detach from the console, press: &lt;ctrl&gt;+a q
+
+/ # uname -a
+Linux myrootfs 5.3.0-29-generic #31-Ubuntu SMP Fri Jan 17 17:27:26 UTC 2020 aarch64 GNU/Linux
+/ #
+$ lxc stop firm-kite
+</code></pre></div></div>
+
+<p>Well, that was pretty easy. I think we’re ready to tackle a
+cross-compiled container now!</p>
+
+<h2>Foreign Container</h2>
+
+<p>First, let’s install the statically linked version of QEMU’s usermode
+emulation binaries. On Debian derivatives, this is available in the
+package <code class="language-plaintext highlighter-rouge">qemu-user-static</code>:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code># apt install qemu-user-static
+</code></pre></div></div>
+
+<p>Importantly, this will also take care of setting up <code class="language-plaintext highlighter-rouge">binfmt_misc</code>
+entries for all supported architectures.</p>
+
+<p>We’re now ready to build our foreign container. We could pick any
+architecture supported by <a href="https://github.com/myrootfs/myrootfs">myrootfs</a>. I asked my magic 8-ball and it
+told me to use <code class="language-plaintext highlighter-rouge">aarch64</code>, and who am I to tempt the gods.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ make ARCH=arm64 generic_defconfig &amp;&amp; make
+</code></pre></div></div>
+
+<p>LXD will refuse to even attempt to start a container of a different
+architecture than the host’s. Fortunately we can just lie to it by
+using the same metadata file as in the previous section.</p>
+
+<p>We can then import it just like before:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ lxc image import --alias myrootfs-aarch64 metadata.tar.gz myrootfs.img
+</code></pre></div></div>
+
+<p>As expected, launching the container will not end well:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ lxc launch myrootfs-aarch64
+Creating the container
+Container name is: above-boar
+Starting above-boar
+Error: Failed to run: /usr/lib/lxd/lxd forkstart above-boar /var/lib/lxd/containers /var/log/lxd/above-boar/lxc.conf:
+Try `lxc info --show-log local:above-boar` for more info
+$ lxc info --show-log local:above-boar
+Name: above-boar
+Remote: unix://
+Architecture: x86_64
+Created: 2020/03/02 08:15 UTC
+Status: Stopped
+Type: persistent
+Profiles: default
+
+Log:
+
+lxc above-boar 20200302081554.516 WARN     conf - conf.c:lxc_setup_devpts:1616 - Invalid argument - Failed to unmount old devpts instance
+lxc above-boar 20200302081554.519 ERROR    start - start.c:start:2028 - No such file or directory - Failed to exec "/sbin/init"
+lxc above-boar 20200302081554.519 ERROR    sync - sync.c:__sync_wait:62 - An error occurred in another process (expected sequence number 7)
+lxc above-boar 20200302081554.519 WARN     network - network.c:lxc_delete_network_priv:2589 - Operation not permitted - Failed to remove interface "eth0" with index 235
+lxc above-boar 20200302081554.519 ERROR    lxccontainer - lxccontainer.c:wait_on_daemonized_start:842 - Received container state "ABORTING" instead of "RUNNING"
+lxc above-boar 20200302081554.520 ERROR    start - start.c:__lxc_start:1939 - Failed to spawn container "above-boar"
+lxc 20200302081554.537 WARN     commands - commands.c:lxc_cmd_rsp_recv:132 - Connection reset by peer - Failed to receive response for command "get_state"
+</code></pre></div></div>
+
+<p>The kernel is configured to run <code class="language-plaintext highlighter-rouge">aarch64</code> binaries using the
+interpreter <code class="language-plaintext highlighter-rouge">/usr/bin/qemu-aarch64-static</code> using <code class="language-plaintext highlighter-rouge">binfmt_misc</code>:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ cat /proc/sys/fs/binfmt_misc/qemu-aarch64
+enabled
+interpreter /usr/bin/qemu-aarch64-static
+flags: OC
+offset 0
+magic 7f454c460201010000000000000000000200b700
+mask ffffffffffffff00fffffffffffffffffeffffff
+</code></pre></div></div>
+
+<p>But this binary is not available inside the LXD container. We can
+change that by adding a “device” in LXD parlance which bind mounts in
+the binary we need. This can be done in different ways, I will create
+a profile and apply it to our container, that makes it easy to reuse
+in the future. The profile looks like this:</p>
+
+<div class="language-yaml highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="na">devices</span><span class="pi">:</span>
+  <span class="na">qemu-aarch64-static</span><span class="pi">:</span>
+    <span class="na">path</span><span class="pi">:</span> <span class="s">/usr/bin/qemu-aarch64-static</span>
+    <span class="na">source</span><span class="pi">:</span> <span class="s">/usr/bin/qemu-aarch64-static</span>
+    <span class="na">type</span><span class="pi">:</span> <span class="s">disk</span>
+</code></pre></div></div>
+
+<p>Why is this a “device”, and of type “disk” nonetheless, you might
+ask. Well I don’t know what to tell you, that’s the names they
+chose. Points for originality I guess.</p>
+
+<p>A profile is created and applied to the instance like so:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ lxc profile create qemu-aarch64
+Profile qemu-aarch64 created
+$ lxc profile edit qemu-aarch64 &lt;&lt;EOF
+&gt; devices:
+&gt;   qemu-aarch64-static:
+&gt;     path: /usr/bin/qemu-aarch64-static
+&gt;     source: /usr/bin/qemu-aarch64-static
+&gt;     type: disk
+&gt; EOF
+$ lxc profile add above-boar qemu-aarch64
+Profile qemu-aarch64 added to above-boar
+</code></pre></div></div>
+
+<p>If we start it again:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ lxc start above-boar
+$ lxc console above-boar
+To detach from the console, press: &lt;ctrl&gt;+a q
+
+/ # uname -a
+Linux myrootfs 4.15.0-76-generic #86-Ubuntu SMP Fri Jan 17 17:24:28 UTC 2020 aarch64 GNU/Linux
+/ # ps
+  PID USER       VSZ STAT COMMAND
+    1 root     57760 S    {init} /usr/bin/qemu-aarch64-static /sbin/init
+  166 root     57760 S    {udhcpc} /usr/bin/qemu-aarch64-static /sbin/udhcpc -R -n -p /var/run/udhcpc.et
+  175 root     57760 S    {syslogd} /usr/bin/qemu-aarch64-static /sbin/syslogd -b 3 -S -D -L
+  180 root     56728 S    {dropbear} /usr/bin/qemu-aarch64-static /sbin/dropbear -R -B -K 30 -I 900
+  182 root     57760 S    {sh} /usr/bin/qemu-aarch64-static /bin/sh
+  185 root         0 0W   {/bin/ps} /bin/ps
+/ #
+</code></pre></div></div>
+
+<p>Success!</p>
+
+
+  </div>
+
+  
+
+</article>
+
+      </div>
+    </main>
+
+    <footer class="site-footer">
+
+  <div class="wrapper">
+
+    <p>
+      
+
+&copy; Westermo Engineers - Powered by <a href="https://jekyllrb.com">Jekyll</a> &amp; <a href="https://github.com/yous/whiteglass">whiteglass</a> - Subscribe via <a href="https://westermo.github.io/feed.xml">RSS</a>
+
+    </p>
+
+  </div>
+
+</footer>
+
+
+  </body>
+
+</html>

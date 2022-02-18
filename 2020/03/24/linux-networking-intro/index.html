@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+
+  <head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  
+  
+  <title>Linux Networking Introduction</title>
+  <meta name="description" content="Every engineer and sysadmin working with Linux have at one time or another run into networking problems. This post is the first in a series showing how to set up networking using low-level tools like: ip, bridge, tc, and ethtool. Let’s start by exploring the basic concepts of networking.">
+  
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://westermo.github.io/2020/03/24/linux-networking-intro/">
+  
+  
+  <link rel="alternate" type="application/rss+xml" title="Westermo Labs" href="https://westermo.github.io/feed.xml">
+
+  
+
+  
+  <meta property="og:title" content="Linux Networking Introduction">
+  <meta property="og:site_name" content="Westermo Labs">
+  <meta property="og:url" content="https://westermo.github.io/2020/03/24/linux-networking-intro/">
+  <meta property="og:description" content="Every engineer and sysadmin working with Linux have at one time or another run into networking problems. This post is the first in a series showing how to set up networking using low-level tools like: ip, bridge, tc, and ethtool. Let’s start by exploring the basic concepts of networking.">
+  
+  
+  <meta name="twitter:card" content="summary">
+  
+  <meta name="twitter:title" content="Linux Networking Introduction">
+  <meta name="twitter:description" content="Every engineer and sysadmin working with Linux have at one time or another run into networking problems. This post is the first in a series showing how to set up networking using low-level tools li...">
+  
+  
+
+  <link rel="dns-prefetch" href="https://fonts.gstatic.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bitter:ital,wght@0,400;0,700;1,400&amp;display=swap" rel="stylesheet">
+
+  
+
+</head>
+
+
+  <body>
+
+    <header class="site-header">
+
+  <div class="wrapper">
+
+    <a class="site-title" href="/">Westermo Labs</a>
+
+    <nav class="site-nav">
+      
+        
+        <a class="page-link" href="/about/">About</a>
+      
+        
+        <a class="page-link" href="/archives/">Archives</a>
+      
+        
+        <a class="page-link" href="https://github.com/westermo/">GitHub</a>
+      
+    </nav>
+
+  </div>
+
+</header>
+
+
+    <main class="page-content" aria-label="Content">
+      <div class="wrapper">
+        <article class="post" itemscope itemtype="http://schema.org/BlogPosting">
+
+  <header class="post-header">
+    
+      <h1 class="post-title" itemprop="name headline">Linux Networking Introduction</h1>
+    
+    <p class="post-meta"><time datetime="2020-03-24T19:22:42+01:00" itemprop="datePublished">Mar 24, 2020</time> • <span itemprop="author" itemscope itemtype="http://schema.org/Person"><span itemprop="name">Joachim Wiberg</span></span>
+
+ •
+  
+    
+    
+      
+    
+      
+        <a href="/tags/howto/">howto</a>
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  
+
+</p>
+  </header>
+
+  <div class="post-content" itemprop="articleBody">
+    <p>Every engineer and sysadmin working with Linux have at one time or
+another run into networking problems.  This post is the first in a
+series showing how to set up networking using low-level tools like:
+<code class="language-plaintext highlighter-rouge">ip</code>, <code class="language-plaintext highlighter-rouge">bridge</code>, <code class="language-plaintext highlighter-rouge">tc</code>, and <code class="language-plaintext highlighter-rouge">ethtool</code>.</p>
+
+<p>Let’s start by exploring the basic concepts of networking.</p>
+
+<!-- more -->
+
+<h2>LAN and Broadcast Domains</h2>
+
+<p>A Local Area Network, or LAN, is a shared Ethernet or Wi-Fi network of
+end devices, which allows unicast, multicast, and broadcast traffic.
+Devices on a LAN today usually communicate using the Internet Protocol
+(IP), and are commonly using IPv4, more on that below.</p>
+
+<p>A brodcast domain is a LAN.  Many LAN segments can be bridged to create
+a larger broadcast domain.  To facilitate communication between LANs you
+need a router, sometimes referred to as gateway.  More on bridging and
+routing later.</p>
+
+<p>All devices have an IP address, but to actually communicate with a
+neighbor on a LAN, a device must find the neighbors physical address,
+the MAC address.</p>
+
+<p>The process in IPv4 to find the MAC address for IP address 192.168.2.200
+is to send a broadcast message to everyone on the LAN:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ARP who has 192.168.2.200?
+</code></pre></div></div>
+
+<p>Everyone who isn’t 192.168.2.200 will ignore and drop the message.  But the
+device which has address 192.168.2.200 will respond:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ARP 192.168.2.200 is at 00:07:7c:c0:ff:ee
+</code></pre></div></div>
+
+<p>ARP stands for Address Resolution Protocol.  When debugging low-level
+networking problems, this is usually the first suspect to investigate.
+Useful tools for debugging ARP related problems are:</p>
+
+<ul>
+  <li><a href="http://man7.org/linux/man-pages/man8/arp.8.html">arp(8)</a></li>
+  <li><a href="http://man7.org/linux/man-pages/man8/ip-neighbour.8.html">ip-neighbour(8)</a></li>
+  <li><a href="http://man7.org/linux/man-pages/man8/arping.8.html">arpping(8)</a></li>
+</ul>
+
+<blockquote>
+  <p>Needless to say, ARP is crucial for IPv4 networking.  When in doubt,
+use <a href="https://en.wikipedia.org/wiki/Tcpdump">tcpdump</a>, <code class="language-plaintext highlighter-rouge">tshark</code>, or
+<a href="https://en.wikipedia.org/wiki/Wireshark">wireshark</a> to debug.  On
+most small embedded targets only <code class="language-plaintext highlighter-rouge">tcpdump</code> exists, it can save <code class="language-plaintext highlighter-rouge">.pcap</code>
+format which can be more easily inspected with Wireshark.</p>
+</blockquote>
+
+<p>The astute reader probably noticed that sending broadcast messages is
+quite a waste, since most devices on the network will have to wake up,
+read the message only to throw it away a nanosecond later.  In IPv6, ARP
+has been replaced with another mechanism, not covered here.  In fact, in
+IPv6 broadcast does not exist at all.</p>
+
+<h2>IP Networking</h2>
+
+<blockquote>
+  <p>This HowTo series will focus entirely on IPv4 networking.</p>
+</blockquote>
+
+<p>As explained in the previous section, IP Networking relies on Ethernet
+or Wi-Fi networks where the physical, or MAC, address is required for
+communication.</p>
+
+<p>As a very short introduction to IPv4 networking we present a few basic
+concepts:</p>
+
+<ul>
+  <li>IPv4 address, e.g. 192.168.2.200</li>
+  <li>IPv4 netmask, e.g. 255.255.255.0</li>
+  <li>IPv4 gateway, e.g. 192.168.2.1</li>
+</ul>
+
+<p>IP Networks work fine without a gateway/router.  The only requirement is
+that all end devices share the same LAN (broadcast domain) and the same
+IP network.</p>
+
+<blockquote>
+  <p>Multiple IP networks may share the same LAN, called <em>multinetting</em>.</p>
+</blockquote>
+
+<p>The address is unique to a single device.  It maps 1:1 to the physical
+MAC address of a PC network interface card (NIC), or similar.  A NIC may
+however have multiple IP addresses.</p>
+
+<p>The netmask is common to all devices in the same IP subnet.  In this
+example we’ve chosen a classic Class-C network, because they are
+probably the easiest to wrap your brain around.  The netmask is
+sometimes written in a <code class="language-plaintext highlighter-rouge">/LEN</code> syntax, in the case of 255.255.255.0 it
+corresponds to /24, because there are 24 binary 1’s, counted from the
+left before the first binary 0.</p>
+
+<p>Hence, to denote a network one can write one of:</p>
+
+<ul>
+  <li>192.168.2.0 netmask 255.255.255.0, or</li>
+  <li>192.168.2/24</li>
+</ul>
+
+<p>This network has two reserved addresses; then network 192.168.2.0 and
+the broadcast address 192.168.2.255.  All other addresses can be used
+by end devices.</p>
+
+<p>In comparison, a Class-B network could look like this:</p>
+
+<ul>
+  <li>172.16.0.0 netmask 255.255.0.0, or</li>
+  <li>172.16/16</li>
+</ul>
+
+<p>This is a much bigger network, it can have 65534 end devices.  The
+reserved network address is 172.16.0.0, but the broadcast address is
+172.16.255.255.</p>
+
+<blockquote>
+  <p>The whole range of IP addresses in 192.168.xxx.xxx are called <em>private</em>,
+as such they are reserved for LANs and must never be exposed on the
+Internet.  There exist more private IP ranges that can be used.</p>
+</blockquote>
+
+<h2>Setting IP address and default route in Linux</h2>
+
+<p>Unless you are on a desktop Linux distribution, where much of the
+networking magic is handled by high-level interfaces like
+<a href="https://en.wikipedia.org/wiki/NetworkManager">NetworkManager</a>,
+you need some way of setting IP address and default route.</p>
+
+<p>There are two major approaches:</p>
+
+<ul>
+  <li>static IP address assignment and default route</li>
+  <li>dynamic assignment using DHCP</li>
+</ul>
+
+<p>To set the IP address of an interface, here <code class="language-plaintext highlighter-rouge">eth0</code>, in Linux there are
+both the traditional <code class="language-plaintext highlighter-rouge">ifconfig</code> tool and the new <code class="language-plaintext highlighter-rouge">ip address</code> command:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ifconfig eth0 192.168.2.200 netmask 255.255.255.0
+</code></pre></div></div>
+
+<p>or</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ip address add 192.168.2.200/24 dev eth0
+</code></pre></div></div>
+
+<p>Inspect interface addresses using</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ifconfig
+</code></pre></div></div>
+
+<p>or</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ip address
+</code></pre></div></div>
+
+<p>Setting the default route (gateway) can be done using the traditional
+<code class="language-plaintext highlighter-rouge">route</code> tool or the <code class="language-plaintext highlighter-rouge">ip route</code> command:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>route default gw 192.168.2.1
+</code></pre></div></div>
+
+<p>or</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ip route add default via 192.168.2.1
+</code></pre></div></div>
+
+<p>Most users are however happy just to get an IP address dynamically and
+don’t really care where it comes from.  However, for this to work you
+need a DHCP server on the same LAN (or use a proxy, called DHCP relay,
+but more about that in another post).  Just about all small office, home
+and industrial gateways have built-in DHCP servers, most of them use the
+amazing <a href="https://en.wikipedia.org/wiki/Dnsmasq">dnsmasq</a>, more about
+that in a later blog post.  There are many DHCP clients available, see
+your particular system for details, here are a few:</p>
+
+<ul>
+  <li>dhclient, https://www.isc.org/dhcp/</li>
+  <li>pump, available originally in RedHat</li>
+  <li>dhcpcd, https://roy.marples.name/projects/dhcpcd/</li>
+  <li>udhcpc, available in <a href="https://www.busybox.net">BusyBox</a> on most embedded systems</li>
+</ul>
+
+<p>Setting up the DHCP client is usually not required on most desktop
+systems, as it is the default.  In the GUI there’s usually just a
+simple checkbox or radio button.  Here are a few pointers though:</p>
+
+<ul>
+  <li>https://wiki.debian.org/DHCP_Client</li>
+  <li>https://wiki.archlinux.org/index.php/dhcpcd</li>
+  <li>https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/5/html/deployment_guide/s1-dhcp-configuring-client</li>
+</ul>
+
+<h2>Summary and More</h2>
+
+<p>In this post we’ve touched upon the topic of local area networks (LANs)
+and broadcast domains.  Here we talked briefly about ARP and its role in
+establishing communication between two devices on a LAN.</p>
+
+<p>We then proceeded to the topic of IP networking and how to set an IP
+address and default route in Linux.</p>
+
+<p>But wait, even if we now understand how to communicate on a LAN, how can
+we communicate between separate LANs?  Well … remember the gateway?</p>
+
+<p>The IP stack in your device knows how to talk to devices in the same IP
+subnet (see above), for everything else it checks the routing table.  In
+most end-devices there are two routes, in our case:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code># route -n
+Kernel IP routing table
+Destination     Gateway         Genmask         Flags Metric Ref    Use Iface
+0.0.0.0         192.168.2.1     0.0.0.0         UG    0      0        0 eth0
+192.168.2.0     0.0.0.0         255.255.255.0   U     0      0        0 eth0
+</code></pre></div></div>
+
+<p>Our device has IP address 192.168.2.200, which falls in the net route
+(last line), but for everything else it will use the default route.
+I.e., if we want to talk to 192.168.1.200 in a neighboring network,
+we send an ARP for 192.168.2.1.  Our gateway responds with its MAC
+address, and we use that as the destination address of all frames,
+but the IP header has the destination of 192.168.1.200.  When our
+frames reach the gateway it can see, from the IP header, that it
+is not the final destination, so it in turn checks <em>its</em> routing
+table to see if it has a net route or must forward our frames to
+yet another gateway.</p>
+
+<h2>EOF</h2>
+
+<p>There is of course more, like; how does DNS work, and where can I learn
+more about DHCP relay agents?  Don’t worry, there will be more network
+related posts coming up, and you can always contact Westermo for more
+information, courses, and even some helpful products.</p>
+
+<p>Visit <a href="https://www.westermo.com">https://www.westermo.com</a></p>
+
+
+  </div>
+
+  
+
+</article>
+
+      </div>
+    </main>
+
+    <footer class="site-footer">
+
+  <div class="wrapper">
+
+    <p>
+      
+
+&copy; Westermo Engineers - Powered by <a href="https://jekyllrb.com">Jekyll</a> &amp; <a href="https://github.com/yous/whiteglass">whiteglass</a> - Subscribe via <a href="https://westermo.github.io/feed.xml">RSS</a>
+
+    </p>
+
+  </div>
+
+</footer>
+
+
+  </body>
+
+</html>

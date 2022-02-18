@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+
+  <head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  
+  
+  <title>Westermo Labs</title>
+  <meta name="description" content="Ramblings of software engineers building networking hardware using Linux">
+  
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://westermo.github.io/posts/2/">
+  
+  
+  <link rel="alternate" type="application/rss+xml" title="Westermo Labs" href="https://westermo.github.io/feed.xml">
+
+  
+
+  
+  <meta property="og:title" content="Westermo Labs">
+  <meta property="og:site_name" content="Westermo Labs">
+  <meta property="og:url" content="https://westermo.github.io/posts/2/">
+  <meta property="og:description" content="Ramblings of software engineers building networking hardware using Linux">
+  
+  
+  <meta name="twitter:card" content="summary">
+  
+  <meta name="twitter:title" content="Westermo Labs">
+  <meta name="twitter:description" content="Ramblings of software engineers building networking hardware using Linux">
+  
+  
+
+  <link rel="dns-prefetch" href="https://fonts.gstatic.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bitter:ital,wght@0,400;0,700;1,400&amp;display=swap" rel="stylesheet">
+
+  
+
+</head>
+
+
+  <body>
+
+    <header class="site-header">
+
+  <div class="wrapper">
+
+    <a class="site-title" href="/">Westermo Labs</a>
+
+    <nav class="site-nav">
+      
+        
+        <a class="page-link" href="/about/">About</a>
+      
+        
+        <a class="page-link" href="/archives/">Archives</a>
+      
+        
+        <a class="page-link" href="https://github.com/westermo/">GitHub</a>
+      
+    </nav>
+
+  </div>
+
+</header>
+
+
+    <main class="page-content" aria-label="Content">
+      <div class="wrapper">
+        <div class="home">
+
+  
+
+  
+
+  <ul class="post-list">
+    
+      
+      
+
+      <li>
+        <header class="post-header">
+          <h1 class="post-title">
+            
+              <a class="post-link" href="/2021/06/10/dnsmasq-and-conserver/">Tools of the Trade :: dnsmasq &amp; console</a>
+            
+          </h1>
+
+          <p class="post-meta">
+            Jun 10, 2021
+            
+              
+
+ •
+  
+    
+    
+      
+    
+      
+        <a href="/tags/howto/">howto</a>,
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  
+    
+    
+      
+    
+      
+    
+      
+        <a href="/tags/tools/">tools</a>
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  
+
+
+            
+            
+          </p>
+        </header>
+
+        <div class="post-content">
+          <p>This is the first post, in hopefully a series, detailing tools we
+networking and switch geeks love.  We start with the underrated
+and oft forgotten dnsmasq and conserver.</p>
+
+<ul>
+  <li>
+    <p><a href="https://thekelleys.org.uk/dnsmasq/doc.html">dnsmasq</a> will be used
+to hand out BOOTP/DHCP leases to our embedded systems, as well as
+serve firmware images using TFTP</p>
+  </li>
+  <li>
+    <p><a href="https://www.conserver.com/">conserver</a> will be used to connect to
+our device’s console port so we can access the bootloader and
+net-boot it from dnsmasq</p>
+  </li>
+</ul>
+
+
+        </div>
+        
+          <p class="post-continue">
+            <a href="/2021/06/10/dnsmasq-and-conserver/">Read on &rarr;</a>
+          </p>
+        
+      </li>
+    
+      
+      
+
+      <li>
+        <header class="post-header">
+          <h1 class="post-title">
+            
+              <a class="post-link" href="/2020/03/25/linux-networking-bridge/">Linux Networking Bridge</a>
+            
+          </h1>
+
+          <p class="post-meta">
+            Mar 25, 2020
+            
+              
+
+ •
+  
+    
+    
+      
+    
+      
+        <a href="/tags/howto/">howto</a>
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  
+
+
+            
+            
+          </p>
+        </header>
+
+        <div class="post-content">
+          <p>This is the second post in a series of posts showing how to set up
+networking in Linux using low-level tools.</p>
+
+<p>It’s time to talk about bridging (switching) and VLANs.</p>
+
+
+        </div>
+        
+          <p class="post-continue">
+            <a href="/2020/03/25/linux-networking-bridge/">Read on &rarr;</a>
+          </p>
+        
+      </li>
+    
+      
+      
+
+      <li>
+        <header class="post-header">
+          <h1 class="post-title">
+            
+              <a class="post-link" href="/2020/03/24/linux-networking-intro/">Linux Networking Introduction</a>
+            
+          </h1>
+
+          <p class="post-meta">
+            Mar 24, 2020
+            
+              
+
+ •
+  
+    
+    
+      
+    
+      
+        <a href="/tags/howto/">howto</a>
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  
+
+
+            
+            
+          </p>
+        </header>
+
+        <div class="post-content">
+          <p>Every engineer and sysadmin working with Linux have at one time or
+another run into networking problems.  This post is the first in a
+series showing how to set up networking using low-level tools like:
+<code class="language-plaintext highlighter-rouge">ip</code>, <code class="language-plaintext highlighter-rouge">bridge</code>, <code class="language-plaintext highlighter-rouge">tc</code>, and <code class="language-plaintext highlighter-rouge">ethtool</code>.</p>
+
+<p>Let’s start by exploring the basic concepts of networking.</p>
+
+
+        </div>
+        
+          <p class="post-continue">
+            <a href="/2020/03/24/linux-networking-intro/">Read on &rarr;</a>
+          </p>
+        
+      </li>
+    
+      
+      
+
+      <li>
+        <header class="post-header">
+          <h1 class="post-title">
+            
+              <a class="post-link" href="/2020/03/02/running-foreign-containers-on-lxd/">Running Foreign Containers on LXD</a>
+            
+          </h1>
+
+          <p class="post-meta">
+            Mar 2, 2020
+            
+               •
+  
+    
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+        <a href="/categories/containers/">containers</a>
+      
+    
+  
+
+
+
+
+            
+            
+          </p>
+        </header>
+
+        <div class="post-content">
+          
+
+        </div>
+        
+          <p class="post-continue">
+            <a href="/2020/03/02/running-foreign-containers-on-lxd/">Read on &rarr;</a>
+          </p>
+        
+      </li>
+    
+      
+      
+
+      <li>
+        <header class="post-header">
+          <h1 class="post-title">
+            
+              <a class="post-link" href="/2020/01/17/hairpin-multicast-routing/">Hairpin Multicast Routing</a>
+            
+          </h1>
+
+          <p class="post-meta">
+            Jan 17, 2020
+            
+              
+
+ •
+  
+    
+    
+      
+        <a href="/tags/bugstory/">bugstory</a>
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  
+
+
+            
+            
+          </p>
+        </header>
+
+        <div class="post-content">
+          
+
+        </div>
+        
+          <p class="post-continue">
+            <a href="/2020/01/17/hairpin-multicast-routing/">Read on &rarr;</a>
+          </p>
+        
+      </li>
+    
+  </ul>
+
+  
+  <div class="pagination">
+    
+
+    
+      <a class="next" href="/">Newer &raquo;</a>
+    
+  </div>
+
+
+
+</div>
+
+      </div>
+    </main>
+
+    <footer class="site-footer">
+
+  <div class="wrapper">
+
+    <p>
+      
+
+&copy; Westermo Engineers - Powered by <a href="https://jekyllrb.com">Jekyll</a> &amp; <a href="https://github.com/yous/whiteglass">whiteglass</a> - Subscribe via <a href="https://westermo.github.io/feed.xml">RSS</a>
+
+    </p>
+
+  </div>
+
+</footer>
+
+
+  </body>
+
+</html>

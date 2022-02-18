@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+
+  <head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  
+  
+  <title>Tools of the Trade :: Debugging an embedded system</title>
+  <meta name="description" content="This post shows how to debug an embedded system with gdbserver. We will run the Buildroot derivative NetBox in Qemu to debug a program that segfaults. Throughout this blog post, the nomenclature for command prompts is: # foo run command foo as root on the target system $ bar run command bar as your own user on the host system">
+  
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://westermo.github.io/2022/02/18/debugging-embedded-systems/">
+  
+  
+  <link rel="alternate" type="application/rss+xml" title="Westermo Labs" href="https://westermo.github.io/feed.xml">
+
+  
+
+  
+  <meta property="og:title" content="Tools of the Trade :: Debugging an embedded system">
+  <meta property="og:site_name" content="Westermo Labs">
+  <meta property="og:url" content="https://westermo.github.io/2022/02/18/debugging-embedded-systems/">
+  <meta property="og:description" content="This post shows how to debug an embedded system with gdbserver. We will run the Buildroot derivative NetBox in Qemu to debug a program that segfaults. Throughout this blog post, the nomenclature for command prompts is: # foo run command foo as root on the target system $ bar run command bar as your own user on the host system">
+  
+  
+  <meta name="twitter:card" content="summary">
+  
+  <meta name="twitter:title" content="Tools of the Trade :: Debugging an embedded system">
+  <meta name="twitter:description" content="This post shows how to debug an embedded system with gdbserver. We will run the Buildroot derivative NetBox in Qemu to debug a program that segfaults. Throughout this blog post, the nomenclature fo...">
+  
+  
+
+  <link rel="dns-prefetch" href="https://fonts.gstatic.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bitter:ital,wght@0,400;0,700;1,400&amp;display=swap" rel="stylesheet">
+
+  
+
+</head>
+
+
+  <body>
+
+    <header class="site-header">
+
+  <div class="wrapper">
+
+    <a class="site-title" href="/">Westermo Labs</a>
+
+    <nav class="site-nav">
+      
+        
+        <a class="page-link" href="/about/">About</a>
+      
+        
+        <a class="page-link" href="/archives/">Archives</a>
+      
+        
+        <a class="page-link" href="https://github.com/westermo/">GitHub</a>
+      
+    </nav>
+
+  </div>
+
+</header>
+
+
+    <main class="page-content" aria-label="Content">
+      <div class="wrapper">
+        <article class="post" itemscope itemtype="http://schema.org/BlogPosting">
+
+  <header class="post-header">
+    
+      <h1 class="post-title" itemprop="name headline">Tools of the Trade :: Debugging an embedded system</h1>
+    
+    <p class="post-meta"><time datetime="2022-02-18T15:42:24+01:00" itemprop="datePublished">Feb 18, 2022</time> • <span itemprop="author" itemscope itemtype="http://schema.org/Person"><span itemprop="name">Joachim Wiberg</span></span>
+
+ •
+  
+    
+    
+      
+    
+      
+        <a href="/tags/howto/">howto</a>,
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  
+    
+    
+      
+    
+      
+    
+      
+        <a href="/tags/tools/">tools</a>,
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  
+    
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+        <a href="/tags/gdb/">gdb</a>,
+      
+    
+      
+    
+      
+    
+      
+    
+  
+    
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+        <a href="/tags/gdbserver/">gdbserver</a>,
+      
+    
+      
+    
+      
+    
+  
+    
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+        <a href="/tags/buildroot/">buildroot</a>
+      
+    
+      
+    
+  
+
+</p>
+  </header>
+
+  <div class="post-content" itemprop="articleBody">
+    <p>This post shows how to debug an embedded system with gdbserver.  We will
+run the <a href="https://buildroot.org/">Buildroot</a> derivative <a href="https://github.com/westermo/netbox/">NetBox</a> in Qemu to debug a program
+that segfaults.</p>
+
+<blockquote>
+  <p>Throughout this blog post, the nomenclature for command prompts is:<br />
+  <code class="language-plaintext highlighter-rouge"># foo</code> run command <code class="language-plaintext highlighter-rouge">foo</code> as root on the target system<br />
+  <code class="language-plaintext highlighter-rouge">$ bar</code> run command <code class="language-plaintext highlighter-rouge">bar</code> as your own user on the host system</p>
+</blockquote>
+
+<!-- more -->
+
+<p>NetBox comes with native support for running all supported targets in
+Qemu, including support for remote debugging.  The support includes a
+lot of boilerplate to simplify connection and set up.  In this blog post
+we will start by showing the bare essentials needed and then show the
+simplified approach offered by NetBox.</p>
+
+<blockquote>
+  <p>See the documentation for the <a href="https://github.com/westermo/netbox/">NetBox</a> project on how to build the
+OS profile of the <em>Zero</em> target (x86_64) to play with it in Qemu.
+<strong>Remember</strong> to activate “Copy gdb server to the target” in the
+“Toolchain” menu, and “build packages with debugging symbols” in the
+“Build options” menu.</p>
+</blockquote>
+
+<h2>Starting Qemu</h2>
+
+<p>Thanks to the insanely powerful laptops developers have today, it’s
+possible to come very close to the actual HW performance when emulating
+it in Qemu.  This unlocks many interesting advantages, like testing and
+debugging, before deploying to the target device.</p>
+
+<p>Qemu in NetBox is set up such that it enables debugging both of kernel
+and user space.  The former is not covered in this post, we will only
+scratch the surface of the latter.</p>
+
+<p>Issuing <code class="language-plaintext highlighter-rouge">make run QEMU_GDB=1</code> in NetBox, opens two local TCP ports where
+you can connect your gdb to.  For kernel debugging it’s the completely
+<a href="https://www.urbandictionary.com/define.php?term=4711">random port number</a> 4711, and for user space port 4712.  These
+can be changed using environment variables.</p>
+
+<p>For user space debugging we also need to create a dedicated debug
+console, called <code class="language-plaintext highlighter-rouge">hvc1</code>.  The default console in NetBox is <code class="language-plaintext highlighter-rouge">hvc0</code>.
+This is done by adding the following to the Qemu command line:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>addr="port=${QEMU_GDB_UPORT:-4712},host=localhost"
+qemu-system-foo ... -gdb tcp::${QEMU_GDB_KPORT:-4711}
+                    -chardev socket,id=hvc1,${addr},server=on,wait=off
+                    -device virtconsole,name=gdb,chardev=hvc1
+                ...
+</code></pre></div></div>
+
+<p>The <code class="language-plaintext highlighter-rouge">...</code> marks other arguments.  See the <a href="https://github.com/westermo/netbox/blob/master/utils/qemu">qemu wrapper script</a>
+for details.</p>
+
+<h2>Starting gdbserver</h2>
+
+<p>When the target system boots (in Qemu), we start <code class="language-plaintext highlighter-rouge">gdbserver</code> with the
+argument <code class="language-plaintext highlighter-rouge">/dev/hvc1</code> which is what allows us to connect to the target.
+This is handled automatically behind the scenes, all you need to do as
+a developer is to enable the service:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code># initctl enable gdbserver
+# initctl reload
+</code></pre></div></div>
+
+<p>The (default) command arguments this evaluates to are:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code># gdbserver --multi /dev/hvc1
+</code></pre></div></div>
+
+<p>To connect to actual HW devices you need to change the arguments to
+instead open an actual TCP port.  See the file <code class="language-plaintext highlighter-rouge">/etc/default/gdbserver</code>
+to change this – after editing the file, do <code class="language-plaintext highlighter-rouge">initctl reload</code> again to
+tell Finit to activate the change.</p>
+
+<blockquote>
+  <p><strong>Tip:</strong> you can of course also run <code class="language-plaintext highlighter-rouge">gdbserver</code> standalone from the
+command line.  Having it run as s service, though, allows you to
+attach to any process on the system, which is hugely useful when
+developing a system.</p>
+</blockquote>
+
+<h2>Basic GDB Setup</h2>
+
+<p>So, now we’re almost there, ready to fire up gdb and connect to the
+target system!  Just one small hurdle left to clear, you need the
+<em>correct</em> gdb installed:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ sudo apt install gdb-multiarch
+</code></pre></div></div>
+
+<p>Because, if you’ve come this far in the blog post, your target system is
+not an x86_64 (or Apple M1), it’s an ARM, MIPS, PowerPC, or Risc V.</p>
+
+<p>In a Buildroot based system the unstripped binaries are installed in the
+<code class="language-plaintext highlighter-rouge">output/staging/</code> directory by default.  This is a good time as any to
+verify that you’ve enabled <code class="language-plaintext highlighter-rouge">BR2_ENABLE_DEBUG</code>, see “Build options”.</p>
+
+<p>Without the tight integration of gdb in NetBox, what you need is to do
+the following in gdb to connect to the target, and attach to a running
+process to debug.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ cd output/staging/
+$ gdb-multiarch
+(gdb) target extended-remote localhost:4712
+(gdb) set solib-absolute-prefix .
+(gdb) set solib-search-path lib:usr/lib
+(gdb) set remote exec-file /usr/sbin/myprogram
+(gdb) file usr/sbin/myprogram
+(gdb) attach 1234
+(gdb) cont
+</code></pre></div></div>
+
+<p>Where <code class="language-plaintext highlighter-rouge">1234</code> is the PID of your already running program.  Since this is
+quite tedious, you can save this to a <code class="language-plaintext highlighter-rouge">.gdbinit</code> file, which gdb loads
+when starting up.  This is what we’ve done to simplify things in NetBox.</p>
+
+<h2>Simplified GDB with NetBox</h2>
+
+<p>NetBox leverages the <code class="language-plaintext highlighter-rouge">$O</code> variable in Buildroot, and this is core to the
+top level <code class="language-plaintext highlighter-rouge">Makefile</code> of NetBox.  It knows what target you are building
+for, so if you have <code class="language-plaintext highlighter-rouge">O=~/src/netbox/output-zero</code> this is respected for
+all commands to make, e.g., typing <code class="language-plaintext highlighter-rouge">make run QEMU_GDB=1</code> starts Qemu for
+Zero.  The same is true for:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ make debug
+</code></pre></div></div>
+
+<p>This basically does the same as shown above, all you need to do is to
+issue the appropriate commands (NetBox extensions):</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>For help, type "help".
+(gdb) user-connect
+(gdb) user-attach usr/sbin/querierd 488
+0x00007f5812afc425 in select () from ./lib64/libc.so.6
+(gdb) cont
+Continuing.
+</code></pre></div></div>
+
+
+  </div>
+
+  
+
+</article>
+
+      </div>
+    </main>
+
+    <footer class="site-footer">
+
+  <div class="wrapper">
+
+    <p>
+      
+
+&copy; Westermo Engineers - Powered by <a href="https://jekyllrb.com">Jekyll</a> &amp; <a href="https://github.com/yous/whiteglass">whiteglass</a> - Subscribe via <a href="https://westermo.github.io/feed.xml">RSS</a>
+
+    </p>
+
+  </div>
+
+</footer>
+
+
+  </body>
+
+</html>

@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+
+  <head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  
+  
+  <title>Hairpin Multicast Routing</title>
+  <meta name="description" content="">
+  
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://westermo.github.io/2020/01/17/hairpin-multicast-routing/">
+  
+  
+  <link rel="alternate" type="application/rss+xml" title="Westermo Labs" href="https://westermo.github.io/feed.xml">
+
+  
+
+  
+  <meta property="og:title" content="Hairpin Multicast Routing">
+  <meta property="og:site_name" content="Westermo Labs">
+  <meta property="og:url" content="https://westermo.github.io/2020/01/17/hairpin-multicast-routing/">
+  <meta property="og:description" content="">
+  
+  
+  <meta name="twitter:card" content="summary">
+  
+  <meta name="twitter:title" content="Hairpin Multicast Routing">
+  <meta name="twitter:description" content="">
+  
+  
+
+  <link rel="dns-prefetch" href="https://fonts.gstatic.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bitter:ital,wght@0,400;0,700;1,400&amp;display=swap" rel="stylesheet">
+
+  
+
+</head>
+
+
+  <body>
+
+    <header class="site-header">
+
+  <div class="wrapper">
+
+    <a class="site-title" href="/">Westermo Labs</a>
+
+    <nav class="site-nav">
+      
+        
+        <a class="page-link" href="/about/">About</a>
+      
+        
+        <a class="page-link" href="/archives/">Archives</a>
+      
+        
+        <a class="page-link" href="https://github.com/westermo/">GitHub</a>
+      
+    </nav>
+
+  </div>
+
+</header>
+
+
+    <main class="page-content" aria-label="Content">
+      <div class="wrapper">
+        <article class="post" itemscope itemtype="http://schema.org/BlogPosting">
+
+  <header class="post-header">
+    
+      <h1 class="post-title" itemprop="name headline">Hairpin Multicast Routing</h1>
+    
+    <p class="post-meta"><time datetime="2020-01-17T09:36:42+01:00" itemprop="datePublished">Jan 17, 2020</time> • <span itemprop="author" itemscope itemtype="http://schema.org/Person"><span itemprop="name">Tobias Waldekranz</span></span>
+
+ •
+  
+    
+    
+      
+        <a href="/tags/bugstory/">bugstory</a>
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  
+
+</p>
+  </header>
+
+  <div class="post-content" itemprop="articleBody">
+    <!-- more -->
+
+<h1>Problem</h1>
+
+<p>For a given IP multicast group, if the following conditions are true:</p>
+
+<ul>
+  <li>There is a “hairpin” multicast route, i.e. the ingress interface is
+equal to the egress interface, configured for that group.</li>
+  <li>There is an open local socket, which has joined (in IGMP terms) that
+same group.</li>
+</ul>
+
+<p>Linux will send out <code class="language-plaintext highlighter-rouge">TTL - 1</code> copies to the network. Instead of the
+expected: <code class="language-plaintext highlighter-rouge">1</code>.</p>
+
+<h1>Reproduction</h1>
+
+<p>On the target machine, use <code class="language-plaintext highlighter-rouge">smcroute</code> to setup a hairpin route and
+perform a join on that same group:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code># smcrouted
+# smcroutectl add  eth0 198.18.1.1 239.1.1.1 eth0
+# smcroutectl join eth0            239.1.1.1
+</code></pre></div></div>
+
+<p>Inject traffic to that group with this <code class="language-plaintext highlighter-rouge">trafgen</code> payload:</p>
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>{
+        eth(sa=02:00:00:00:00:01, da=01:00:5e:01:01:01),
+        ipv4(saddr=198.18.1.1, daddr=239.1.1.1, ttl=5)
+        udp(sp=1, dp=2),
+        "Hello world"
+}
+</code></pre></div></div>
+
+<p>Snooping <code class="language-plaintext highlighter-rouge">eth0</code> on the target:</p>
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code># tcpdump -vnli eth0 multicast
+tcpdump: listening on eth0, link-type EN10MB (Ethernet), capture size 262144 bytes
+15:07:28.395793 IP (tos 0x0, ttl 5, id 0, offset 0, flags [none], proto UDP (17), length 39)
+    198.18.1.1.1 &gt; 239.1.1.1.2: UDP, length 11
+15:07:28.395852 IP (tos 0x0, ttl 4, id 0, offset 0, flags [none], proto UDP (17), length 39)
+    198.18.1.1.1 &gt; 239.1.1.1.2: UDP, length 11
+15:07:28.395898 IP (tos 0x0, ttl 3, id 0, offset 0, flags [none], proto UDP (17), length 39)
+    198.18.1.1.1 &gt; 239.1.1.1.2: UDP, length 11
+15:07:28.395906 IP (tos 0x0, ttl 2, id 0, offset 0, flags [none], proto UDP (17), length 39)
+    198.18.1.1.1 &gt; 239.1.1.1.2: UDP, length 11
+15:07:28.395912 IP (tos 0x0, ttl 1, id 0, offset 0, flags [none], proto UDP (17), length 39)
+    198.18.1.1.1 &gt; 239.1.1.1.2: UDP, length 11
+^C
+5 packets captured
+5 packets received by filter
+0 packets dropped by kernel
+#
+</code></pre></div></div>
+<p>We can see the incoming frame, with <code class="language-plaintext highlighter-rouge">TTL=5</code> being routed back four
+times, decrementing the TTL by one for each packet.</p>
+
+<h1>Investigation</h1>
+
+<p>How are we getting here? Make stacks!</p>
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code># ply 'k:dev_queue_xmit { print(stack); }'
+info: creating kallsyms cache
+ply: active
+
+	dev_queue_xmit+1
+	ip_finish_output+318
+	ip_mc_output+139
+	NF_HOOK.constprop.52+228
+	ipmr_queue_xmit.isra.39+982
+	ip_mr_forward+325
+	ip_mr_input+323
+	ip_rcv_finish+125
+	ip_rcv+217
+	__netif_receive_skb_one_core+80
+	__netif_receive_skb+19
+	netif_receive_skb_internal+57
+	napi_gro_receive+216
+	receive_buf+1188
+	virtnet_poll+230
+	net_rx_action+619
+	__softirqentry_text_start+235
+	irq_exit+181
+	do_IRQ+86
+	common_interrupt+15
+	native_safe_halt+18
+	__cpuidle_text_start+24
+	arch_cpu_idle+10
+	default_idle_call+30
+	do_idle+450
+	cpu_startup_entry+110
+	rest_init+188
+	start_kernel+1207
+	x86_64_start_reservations+42
+	x86_64_start_kernel+114
+	secondary_startup_64+164
+
+
+	dev_queue_xmit+1
+	ip_finish_output+318
+	ip_mc_output+139
+	NF_HOOK.constprop.52+228
+	ipmr_queue_xmit.isra.39+982
+	ip_mr_forward+325
+	ip_mr_input+323
+	ip_rcv_finish+125
+	ip_rcv+217
+	__netif_receive_skb_one_core+80
+	__netif_receive_skb+19
+	process_backlog+191
+	net_rx_action+619
+	__softirqentry_text_start+235
+	run_ksoftirqd+50
+	smpboot_thread_fn+357
+	kthread+253
+	ret_from_fork+31
+
+
+	dev_queue_xmit+1
+	ip_finish_output+318
+	ip_mc_output+139
+	NF_HOOK.constprop.52+228
+	ipmr_queue_xmit.isra.39+982
+	ip_mr_forward+325
+	ip_mr_input+323
+	ip_rcv_finish+125
+	ip_rcv+217
+	__netif_receive_skb_one_core+80
+	__netif_receive_skb+19
+	process_backlog+191
+	net_rx_action+619
+	__softirqentry_text_start+235
+	run_ksoftirqd+50
+	smpboot_thread_fn+357
+	kthread+253
+	ret_from_fork+31
+
+
+	dev_queue_xmit+1
+	ip_finish_output+318
+	ip_mc_output+139
+	NF_HOOK.constprop.52+228
+	ipmr_queue_xmit.isra.39+982
+	ip_mr_forward+325
+	ip_mr_input+323
+	ip_rcv_finish+125
+	ip_rcv+217
+	__netif_receive_skb_one_core+80
+	__netif_receive_skb+19
+	process_backlog+191
+	net_rx_action+619
+	__softirqentry_text_start+235
+	run_ksoftirqd+50
+	smpboot_thread_fn+357
+	kthread+253
+	ret_from_fork+31
+
+^Cply: deactivating
+#
+</code></pre></div></div>
+
+<p>Ok, first packet is going out as expected, the other four are coming
+from the <code class="language-plaintext highlighter-rouge">process_backlog</code> path, meaning that we’re most likely
+calling <code class="language-plaintext highlighter-rouge">enqueue_to_backlog</code> somewhere:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code># ply 'k:enqueue_to_backlog { print(stack); exit(0); }'
+ply: active
+
+	enqueue_to_backlog+1
+	netif_rx_ni+33
+	dev_loopback_xmit+154
+	ip_mc_finish_output+39
+	ip_mc_output+352
+	NF_HOOK.constprop.52+228
+	ipmr_queue_xmit.isra.39+982
+	ip_mr_forward+325
+	ip_mr_input+323
+	ip_rcv_finish+125
+	ip_rcv+217
+	__netif_receive_skb_one_core+80
+	__netif_receive_skb+19
+	netif_receive_skb_internal+57
+	napi_gro_receive+216
+	receive_buf+1188
+	virtnet_poll+230
+	net_rx_action+619
+	__softirqentry_text_start+235
+	irq_exit+181
+	do_IRQ+86
+	common_interrupt+15
+	native_safe_halt+18
+	__cpuidle_text_start+24
+	arch_cpu_idle+10
+	default_idle_call+30
+	do_idle+450
+	cpu_startup_entry+110
+	rest_init+188
+	start_kernel+1207
+	x86_64_start_reservations+42
+	x86_64_start_kernel+114
+
+ply: deactivating
+#
+</code></pre></div></div>
+
+<p>Looking at the code:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code>	<span class="k">if</span> <span class="p">(</span><span class="n">rt</span><span class="o">-&gt;</span><span class="n">rt_flags</span><span class="o">&amp;</span><span class="n">RTCF_MULTICAST</span><span class="p">)</span> <span class="p">{</span>
+		<span class="k">if</span> <span class="p">(</span><span class="n">sk_mc_loop</span><span class="p">(</span><span class="n">sk</span><span class="p">)</span>
+<span class="cp">#ifdef CONFIG_IP_MROUTE
+</span>		<span class="cm">/* Small optimization: do not loopback not local frames,
+		   which returned after forwarding; they will be  dropped
+		   by ip_mr_input in any case.
+		   Note, that local frames are looped back to be delivered
+		   to local recipients.
+
+		   This check is duplicated in ip_mr_input at the moment.
+		 */</span>
+		    <span class="o">&amp;&amp;</span>
+		    <span class="p">((</span><span class="n">rt</span><span class="o">-&gt;</span><span class="n">rt_flags</span> <span class="o">&amp;</span> <span class="n">RTCF_LOCAL</span><span class="p">)</span> <span class="o">||</span>
+		     <span class="o">!</span><span class="p">(</span><span class="n">IPCB</span><span class="p">(</span><span class="n">skb</span><span class="p">)</span><span class="o">-&gt;</span><span class="n">flags</span> <span class="o">&amp;</span> <span class="n">IPSKB_FORWARDED</span><span class="p">))</span>
+<span class="cp">#endif
+</span>		   <span class="p">)</span> <span class="p">{</span>
+			<span class="k">struct</span> <span class="n">sk_buff</span> <span class="o">*</span><span class="n">newskb</span> <span class="o">=</span> <span class="n">skb_clone</span><span class="p">(</span><span class="n">skb</span><span class="p">,</span> <span class="n">GFP_ATOMIC</span><span class="p">);</span>
+			<span class="k">if</span> <span class="p">(</span><span class="n">newskb</span><span class="p">)</span>
+				<span class="n">NF_HOOK</span><span class="p">(</span><span class="n">NFPROTO_IPV4</span><span class="p">,</span> <span class="n">NF_INET_POST_ROUTING</span><span class="p">,</span>
+					<span class="n">net</span><span class="p">,</span> <span class="n">sk</span><span class="p">,</span> <span class="n">newskb</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">,</span> <span class="n">newskb</span><span class="o">-&gt;</span><span class="n">dev</span><span class="p">,</span>
+					<span class="n">ip_mc_finish_output</span><span class="p">);</span>
+		<span class="p">}</span>
+
+		<span class="cm">/* Multicasts with ttl 0 must not go beyond the host */</span>
+
+		<span class="k">if</span> <span class="p">(</span><span class="n">ip_hdr</span><span class="p">(</span><span class="n">skb</span><span class="p">)</span><span class="o">-&gt;</span><span class="n">ttl</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)</span> <span class="p">{</span>
+			<span class="n">kfree_skb</span><span class="p">(</span><span class="n">skb</span><span class="p">);</span>
+			<span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
+		<span class="p">}</span>
+	<span class="p">}</span>
+</code></pre></div></div>
+
+<p>We see that the reason that we’re not getting any replicated packets
+unless we join the group is that <code class="language-plaintext highlighter-rouge">rt-&gt;rt_flags &amp; RTCF_LOCAL</code> will be
+false in that case. However, the other guard should still apply since
+the packet has been routed. The comment also references a duplicated
+check in <code class="language-plaintext highlighter-rouge">ip_mr_input</code>:</p>
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code>	<span class="cm">/* Packet is looped back after forward, it should not be
+	 * forwarded second time, but still can be delivered locally.
+	 */</span>
+	<span class="k">if</span> <span class="p">(</span><span class="n">IPCB</span><span class="p">(</span><span class="n">skb</span><span class="p">)</span><span class="o">-&gt;</span><span class="n">flags</span> <span class="o">&amp;</span> <span class="n">IPSKB_FORWARDED</span><span class="p">)</span>
+		<span class="k">goto</span> <span class="n">dont_forward</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>Alright, so everything should be great then! Alas, it is not. We are
+sad. This must mean that the flag is cleared somewhere before the
+duplicated packet reaches <code class="language-plaintext highlighter-rouge">ip_mr_input</code>.</p>
+
+<p>Using GDB, we can verify that the flag is indeed set when we enqueue
+the packet:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Temporary breakpoint 11, enqueue_to_backlog (skb=0xffff88800aa84200, cpu=0, qtail=0xffff88800de03b00) at net/core/dev.c:4225
+4225	{
+(gdb) print ((struct inet_skb_parm*)((skb)-&gt;cb))-&gt;flags
+$7 = 1
+</code></pre></div></div>
+
+<p>Still set when we come back to process the queue:</p>
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Temporary breakpoint 13, process_backlog (napi=0xffff88800de222d0, quota=64) at net/core/dev.c:5855
+5855				__netif_receive_skb(skb);
+(gdb) p skb
+$9 = (struct sk_buff *) 0xffff88800aa84200
+(gdb) print ((struct inet_skb_parm*)((skb)-&gt;cb))-&gt;flags
+$10 = 1
+</code></pre></div></div>
+
+<p>And when entering the IP stack:</p>
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Temporary breakpoint 14, ip_rcv (skb=0xffff88800aa84200, dev=0xffff88800f58a000, pt=0xffffffff82308ce0 &lt;ip_packet_type&gt;, orig_dev=0xffff88800f58a000) at net/ipv4/ip_input.c:518
+518	{
+(gdb) print ((struct inet_skb_parm*)((skb)-&gt;cb))-&gt;flags
+$11 = 1
+</code></pre></div></div>
+
+<p>But not after pre-routing:</p>
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Temporary breakpoint 15, ip_rcv_finish (net=0xffffffff822a9700 &lt;init_net&gt;, sk=0x0 &lt;irq_stack_union&gt;, skb=0xffff88800aa84200) at net/ipv4/ip_input.c:401
+401	{
+(gdb) print ((struct inet_skb_parm*)((skb)-&gt;cb))-&gt;flags
+$12 = 0
+</code></pre></div></div>
+
+<p><strong>Aside:</strong> Yes, I am aware of watchpoints, but I could not get them to
+work for some reason. When in doubt, brute force!</p>
+
+<p>This means that we’re dropping the flag in <code class="language-plaintext highlighter-rouge">ip_rcv</code>, which is mostly
+just a wrapper for <code class="language-plaintext highlighter-rouge">ip_rcv_core</code> in which we find this:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code>	<span class="cm">/* Remove any debris in the socket control block */</span>
+	<span class="n">memset</span><span class="p">(</span><span class="n">IPCB</span><span class="p">(</span><span class="n">skb</span><span class="p">),</span> <span class="mi">0</span><span class="p">,</span> <span class="k">sizeof</span><span class="p">(</span><span class="k">struct</span> <span class="n">inet_skb_parm</span><span class="p">));</span>
+</code></pre></div></div>
+
+<p>Thus, when we reach <code class="language-plaintext highlighter-rouge">ip_mr_input</code> the <code class="language-plaintext highlighter-rouge">IPSKB_FORWARDED</code> will <strong>NEVER</strong>
+be set. As a result, the packet will keep being replicated until the
+TTL runs out.</p>
+
+<h1>Discussion</h1>
+
+<p>Why is this code here:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code>	<span class="cm">/* Remove any debris in the socket control block */</span>
+	<span class="n">memset</span><span class="p">(</span><span class="n">IPCB</span><span class="p">(</span><span class="n">skb</span><span class="p">),</span> <span class="mi">0</span><span class="p">,</span> <span class="k">sizeof</span><span class="p">(</span><span class="k">struct</span> <span class="n">inet_skb_parm</span><span class="p">));</span>
+</code></pre></div></div>
+
+<p>It is because this routine has no way of assuming that the contents of
+<code class="language-plaintext highlighter-rouge">skb-&gt;cb</code> (which is the backing storage for <code class="language-plaintext highlighter-rouge">IPCB(skb)</code> was previously
+set by the IP stack. It could just as well have been used by
+underlying interface code (e.g. a bridge).</p>
+
+<p>In order for this to work as expected, the flag needs to be saved in a
+dedicated space on the <code class="language-plaintext highlighter-rouge">skb</code> that is not touched by other layers.</p>
+
+<p>So why even perform the check then? Well, looking at the <code class="language-plaintext highlighter-rouge">git blame</code>,
+we can see that the code is coming from the initial GIT commit by
+Torvalds. It is very possible that this check has just been copied
+from the BSD from which it came, where perhaps the information was
+still available. That’s a rabbit hole for another day though.</p>
+
+<h1>Solution</h1>
+
+<p>At a high level, we need some way for the IPMR stack to know that
+we’ve passed through it before, and already performed the
+routing. There are a few ways that I can think of to accomplish this:</p>
+
+<ol>
+  <li>Add a field to <code class="language-plaintext highlighter-rouge">struct sk_buff</code>.
+    <ul>
+      <li>Pros: Simple.</li>
+      <li>Cons: New <code class="language-plaintext highlighter-rouge">skb</code>-fields are seldom appreciated upstream, for good
+ reason.</li>
+    </ul>
+  </li>
+  <li>Use the new <code class="language-plaintext highlighter-rouge">skb_ext_*</code> functionality to append a TLV fragment to
+  the <code class="language-plaintext highlighter-rouge">skb</code>.
+    <ul>
+      <li>Pros: Only impacts the <code class="language-plaintext highlighter-rouge">skb</code> in this particular corner-case.</li>
+      <li>Cons: A few more lines of code.</li>
+    </ul>
+  </li>
+</ol>
+
+<p>IMHO, (2) looks like the clear winner. In <code class="language-plaintext highlighter-rouge">ip_mc_finish_output</code> we
+could <code class="language-plaintext highlighter-rouge">skb_ext_add</code> an <code class="language-plaintext highlighter-rouge">SKB_EXT_IPMR_LOOPBACK</code> extension indicating
+that the packet was forwarded. Something like:</p>
+
+<div class="language-patch highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="p">@@ -328,6 +328,9 @@</span> static int ip_mc_finish_output(struct net *net, struct sock *sk,
+ 		return ret;
+ 	}
+ 
+<span class="gi">+	if (IPCB(skb)-&gt;flags &amp; IPSKB_FORWARDED)
++		skb_ext_add(skb, SKB_EXT_IPMR_LOOPBACK);
++
+</span> 	return dev_loopback_xmit(net, sk, skb);
+ }
+</code></pre></div></div>
+
+<p>This could then be retrieved in <code class="language-plaintext highlighter-rouge">ip_mr_input</code>:</p>
+
+<div class="language-patch highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="p">@@ -2103,6 +2103,11 @@</span> int ip_mr_input(struct sk_buff *skb)
+ 		}
+ 	}
+ 
+<span class="gi">+	if (unlikely(skb_ext_exist(skb, SKB_EXT_IPMR_LOOPBACK))) {
++		IPCB(skb)-&gt;flags |= IPSKB_FORWARDED;
++		skb_ext_put(skb, SKB_EXT_IPMR_LOOPBACK);
++	}
++
+</span> 	/* Packet is looped back after forward, it should not be
+ 	 * forwarded second time, but still can be delivered locally.
+ 	 */
+</code></pre></div></div>
+
+  </div>
+
+  
+
+</article>
+
+      </div>
+    </main>
+
+    <footer class="site-footer">
+
+  <div class="wrapper">
+
+    <p>
+      
+
+&copy; Westermo Engineers - Powered by <a href="https://jekyllrb.com">Jekyll</a> &amp; <a href="https://github.com/yous/whiteglass">whiteglass</a> - Subscribe via <a href="https://westermo.github.io/feed.xml">RSS</a>
+
+    </p>
+
+  </div>
+
+</footer>
+
+
+  </body>
+
+</html>

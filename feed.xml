@@ -1,0 +1,2606 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xml:lang="en">
+  <generator uri="http://jekyllrb.com" version="3.8.7">Jekyll</generator>
+  
+  
+  <link href="https://westermo.github.io/feed.xml" rel="self" type="application/atom+xml" />
+  <link href="https://westermo.github.io/" rel="alternate" type="text/html" hreflang="en" />
+  <updated>2022-02-18T18:03:54+01:00</updated>
+  <id>https://westermo.github.io//</id>
+
+  
+    <title type="html">Westermo Labs</title>
+  
+
+  
+    <subtitle>Ramblings of software engineers building networking hardware using Linux</subtitle>
+  
+
+  
+    <author>
+        <name>Westermo Engineers</name>
+      
+      
+    </author>
+  
+
+  
+  
+    <entry>
+      
+      <title type="html">Tools of the Trade :: Debugging an embedded system</title>
+      
+      
+      <link href="https://westermo.github.io/2022/02/18/debugging-embedded-systems/" rel="alternate" type="text/html" title="Tools of the Trade :: Debugging an embedded system" />
+      
+      <published>2022-02-18T15:42:24+01:00</published>
+      <updated>2022-02-18T18:02:36+01:00</updated>
+      <id>https://westermo.github.io/2022/02/18/debugging-embedded-systems</id>
+      <content type="html" xml:base="https://westermo.github.io/2022/02/18/debugging-embedded-systems/">&lt;p&gt;This post shows how to debug an embedded system with gdbserver.  We will
+run the &lt;a href=&quot;https://buildroot.org/&quot;&gt;Buildroot&lt;/a&gt; derivative &lt;a href=&quot;https://github.com/westermo/netbox/&quot;&gt;NetBox&lt;/a&gt; in Qemu to debug a program
+that segfaults.&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;Throughout this blog post, the nomenclature for command prompts is:&lt;br /&gt;
+  &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;# foo&lt;/code&gt; run command &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;foo&lt;/code&gt; as root on the target system&lt;br /&gt;
+  &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;$ bar&lt;/code&gt; run command &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;bar&lt;/code&gt; as your own user on the host system&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;!-- more --&gt;
+
+&lt;p&gt;NetBox comes with native support for running all supported targets in
+Qemu, including support for remote debugging.  The support includes a
+lot of boilerplate to simplify connection and set up.  In this blog post
+we will start by showing the bare essentials needed and then show the
+simplified approach offered by NetBox.&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;See the documentation for the &lt;a href=&quot;https://github.com/westermo/netbox/&quot;&gt;NetBox&lt;/a&gt; project on how to build the
+OS profile of the &lt;em&gt;Zero&lt;/em&gt; target (x86_64) to play with it in Qemu.
+&lt;strong&gt;Remember&lt;/strong&gt; to activate “Copy gdb server to the target” in the
+“Toolchain” menu, and “build packages with debugging symbols” in the
+“Build options” menu.&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;h2&gt;Starting Qemu&lt;/h2&gt;
+
+&lt;p&gt;Thanks to the insanely powerful laptops developers have today, it’s
+possible to come very close to the actual HW performance when emulating
+it in Qemu.  This unlocks many interesting advantages, like testing and
+debugging, before deploying to the target device.&lt;/p&gt;
+
+&lt;p&gt;Qemu in NetBox is set up such that it enables debugging both of kernel
+and user space.  The former is not covered in this post, we will only
+scratch the surface of the latter.&lt;/p&gt;
+
+&lt;p&gt;Issuing &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;make run QEMU_GDB=1&lt;/code&gt; in NetBox, opens two local TCP ports where
+you can connect your gdb to.  For kernel debugging it’s the completely
+&lt;a href=&quot;https://www.urbandictionary.com/define.php?term=4711&quot;&gt;random port number&lt;/a&gt; 4711, and for user space port 4712.  These
+can be changed using environment variables.&lt;/p&gt;
+
+&lt;p&gt;For user space debugging we also need to create a dedicated debug
+console, called &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;hvc1&lt;/code&gt;.  The default console in NetBox is &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;hvc0&lt;/code&gt;.
+This is done by adding the following to the Qemu command line:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;addr=&quot;port=${QEMU_GDB_UPORT:-4712},host=localhost&quot;
+qemu-system-foo ... -gdb tcp::${QEMU_GDB_KPORT:-4711}
+                    -chardev socket,id=hvc1,${addr},server=on,wait=off
+                    -device virtconsole,name=gdb,chardev=hvc1
+                ...
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;The &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;...&lt;/code&gt; marks other arguments.  See the &lt;a href=&quot;https://github.com/westermo/netbox/blob/master/utils/qemu&quot;&gt;qemu wrapper script&lt;/a&gt;
+for details.&lt;/p&gt;
+
+&lt;h2&gt;Starting gdbserver&lt;/h2&gt;
+
+&lt;p&gt;When the target system boots (in Qemu), we start &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;gdbserver&lt;/code&gt; with the
+argument &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;/dev/hvc1&lt;/code&gt; which is what allows us to connect to the target.
+This is handled automatically behind the scenes, all you need to do as
+a developer is to enable the service:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;# initctl enable gdbserver
+# initctl reload
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;The (default) command arguments this evaluates to are:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;# gdbserver --multi /dev/hvc1
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;To connect to actual HW devices you need to change the arguments to
+instead open an actual TCP port.  See the file &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;/etc/default/gdbserver&lt;/code&gt;
+to change this – after editing the file, do &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;initctl reload&lt;/code&gt; again to
+tell Finit to activate the change.&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;&lt;strong&gt;Tip:&lt;/strong&gt; you can of course also run &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;gdbserver&lt;/code&gt; standalone from the
+command line.  Having it run as s service, though, allows you to
+attach to any process on the system, which is hugely useful when
+developing a system.&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;h2&gt;Basic GDB Setup&lt;/h2&gt;
+
+&lt;p&gt;So, now we’re almost there, ready to fire up gdb and connect to the
+target system!  Just one small hurdle left to clear, you need the
+&lt;em&gt;correct&lt;/em&gt; gdb installed:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ sudo apt install gdb-multiarch
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Because, if you’ve come this far in the blog post, your target system is
+not an x86_64 (or Apple M1), it’s an ARM, MIPS, PowerPC, or Risc V.&lt;/p&gt;
+
+&lt;p&gt;In a Buildroot based system the unstripped binaries are installed in the
+&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;output/staging/&lt;/code&gt; directory by default.  This is a good time as any to
+verify that you’ve enabled &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;BR2_ENABLE_DEBUG&lt;/code&gt;, see “Build options”.&lt;/p&gt;
+
+&lt;p&gt;Without the tight integration of gdb in NetBox, what you need is to do
+the following in gdb to connect to the target, and attach to a running
+process to debug.&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ cd output/staging/
+$ gdb-multiarch
+(gdb) target extended-remote localhost:4712
+(gdb) set solib-absolute-prefix .
+(gdb) set solib-search-path lib:usr/lib
+(gdb) set remote exec-file /usr/sbin/myprogram
+(gdb) file usr/sbin/myprogram
+(gdb) attach 1234
+(gdb) cont
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Where &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;1234&lt;/code&gt; is the PID of your already running program.  Since this is
+quite tedious, you can save this to a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;.gdbinit&lt;/code&gt; file, which gdb loads
+when starting up.  This is what we’ve done to simplify things in NetBox.&lt;/p&gt;
+
+&lt;h2&gt;Simplified GDB with NetBox&lt;/h2&gt;
+
+&lt;p&gt;NetBox leverages the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;$O&lt;/code&gt; variable in Buildroot, and this is core to the
+top level &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Makefile&lt;/code&gt; of NetBox.  It knows what target you are building
+for, so if you have &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;O=~/src/netbox/output-zero&lt;/code&gt; this is respected for
+all commands to make, e.g., typing &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;make run QEMU_GDB=1&lt;/code&gt; starts Qemu for
+Zero.  The same is true for:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ make debug
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;This basically does the same as shown above, all you need to do is to
+issue the appropriate commands (NetBox extensions):&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;For help, type &quot;help&quot;.
+(gdb) user-connect
+(gdb) user-attach usr/sbin/querierd 488
+0x00007f5812afc425 in select () from ./lib64/libc.so.6
+(gdb) cont
+Continuing.
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;</content>
+
+      
+      
+      
+      
+      
+
+      
+        <author>
+            <name>Joachim Wiberg</name>
+          
+          
+        </author>
+      
+
+      
+
+      
+        <category term="howto" />
+      
+        <category term="tools" />
+      
+        <category term="gdb" />
+      
+        <category term="gdbserver" />
+      
+        <category term="buildroot" />
+      
+
+      
+        <summary type="html">This post shows how to debug an embedded system with gdbserver. We will run the Buildroot derivative NetBox in Qemu to debug a program that segfaults. Throughout this blog post, the nomenclature for command prompts is: # foo run command foo as root on the target system $ bar run command bar as your own user on the host system</summary>
+      
+
+      
+      
+    </entry>
+  
+  
+  
+    <entry>
+      
+      <title type="html">Linux Bridge and IGMP Snooping</title>
+      
+      
+      <link href="https://westermo.github.io/2022/02/17/bridge-igmp-snooping/" rel="alternate" type="text/html" title="Linux Bridge and IGMP Snooping" />
+      
+      <published>2022-02-17T14:32:24+01:00</published>
+      <updated>2022-02-18T18:02:36+01:00</updated>
+      <id>https://westermo.github.io/2022/02/17/bridge-igmp-snooping</id>
+      <content type="html" xml:base="https://westermo.github.io/2022/02/17/bridge-igmp-snooping/">&lt;p&gt;This is the third post in a series of blog posts showing how to set up
+networking in Linux using low-level tools.&lt;/p&gt;
+
+&lt;p&gt;In this part we talk about limiting the broadcast effects of multicast
+using IGMP/MLD snooping in the Linux bridge (software switch).  Our
+context, as usual, is industrial networking with a focus on embedded
+devices.&lt;/p&gt;
+
+&lt;!-- more --&gt;
+
+&lt;h2&gt;Introduction&lt;/h2&gt;
+
+&lt;p&gt;The Linux bridge recently gained support for per-VLAN IGMP/MLD snooping.
+It stands fine on its own legs, with lots of new per-VLAN settings.  But
+since it lives in the bridge, it cannot know about any VLAN interfaces
+that may (or may not) sit on top of the bridge.  There are naming issues
+(br0.1 vs vlan1), and the fact that an interface can have multiple IP
+addresses assigned to it.  Therefore, the current bridge implementation
+in &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;br_multicast.c&lt;/code&gt; can only&lt;sup id=&quot;fnref:1&quot;&gt;&lt;a href=&quot;#fn:1&quot; class=&quot;footnote&quot;&gt;1&lt;/a&gt;&lt;/sup&gt; act as a proxy querier, i.e., for IGMP
+this means it can only send queries (per-VLAN) with source IP 0.0.0.0.&lt;/p&gt;
+
+&lt;p&gt;To understand why this might be a problem there are two things to
+consider:&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;Some networks don’t have a (dynamic) multicast router&lt;sup id=&quot;fnref:2&quot;&gt;&lt;a href=&quot;#fn:2&quot; class=&quot;footnote&quot;&gt;2&lt;/a&gt;&lt;/sup&gt;.  Usually
+the multicast router is the IGMP/MLD querier for a LAN, but some
+LANs consist only of (industrial) switches that try their best to
+limit the spread of multicast&lt;sup id=&quot;fnref:3&quot;&gt;&lt;a href=&quot;#fn:3&quot; class=&quot;footnote&quot;&gt;3&lt;/a&gt;&lt;/sup&gt; on low-capacity links or to end
+devices sensitive to too much data&lt;/li&gt;
+  &lt;li&gt;Some end-devices discard queries with source IP 0.0.0.0.  This is
+of course wrong, but good luck telling a PLC vendor they should
+change their embedded firmware of an aging product, or even the
+customer site to upgrade their locked-down system with a brand new
+firmware – these people don’t like change and sometimes because it
+comes with drawn-out re-certification processes&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;So, proxy queries are allowed per RFC, but that might not work with some
+end-devices, and we can’t disable proxy-query because some end-devices
+don’t do gratuitous join/leave.  Hence, we need a service to provide us
+with an IGMP/MLD querier that can (at least) use one of the IP address
+on the interfaces we have on top of the bridge.  Here we present one
+solution to that problem, called &lt;a href=&quot;https://github.com/westermo/querierd/&quot;&gt;querierd&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;However, first we need to talk a bit about IGMP and MLD, which are
+foreign concepts to many, and magical buggy fairy dust that doesn’t
+work, to some.&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;Actually, it’s not at all uncommon that many IGMP/IGMP snooping
+implementations in the wild are buggy.  So you can find many (!) live
+networks out there that simply have disabled it on all switches just
+to get anything to work.  This is of course both unsafe and can cause
+a lot of overload on end devices, since unregulated multicast is then
+treated as broadcast.&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;h2&gt;IGMP/MLD&lt;/h2&gt;
+
+&lt;p&gt;IGMP/MLD snooping means a switch, or in this case the Linux bridge, can
+“snoop” on the IGMP traffic from the elected querier and all multicast
+receivers on a LAN.  &lt;a href=&quot;https://datatracker.ietf.org/doc/html/rfc3376&quot;&gt;IGMP&lt;/a&gt; is the control protocol for IPv4 multicast
+and &lt;a href=&quot;https://datatracker.ietf.org/doc/html/rfc3810&quot;&gt;MLD&lt;/a&gt; is the control protocol for IPv6 multicast.  Both regulate
+the flow of multicast on a LAN and are &lt;em&gt;very&lt;/em&gt; similar, except for the IP
+protocol.  We will focus on IPv4 in this post.&lt;/p&gt;
+
+&lt;p&gt;The basic mechanism in IGMP is similar to a newspaper subscription, a
+sales person (querier) calls up potential customers (all end devices) in
+their distribution area (LAN); “Do you want multicast? (Query)” and the
+customers (end devices) answer (IGMP report) with the newspaper(s)
+(group(s) they want to subscribe to.&lt;/p&gt;
+
+&lt;p&gt;As you can see, there are two types of IGMP/MLD control packets:&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;IGMP/MLD query, sent by the elected querier&lt;/li&gt;
+  &lt;li&gt;IGMP/MLD report, also called “join” or “leave” from earlier
+protocol versions.  E.g., an end device wants to “join a group”,
+meaning; stop filtering this group for me&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;The IGMP/MLD &lt;em&gt;snooping mechanism&lt;/em&gt; is responsible for:&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;Forwarding queries from the elected querier to all end devices on
+the same LAN (members of the same VLAN).&lt;/li&gt;
+  &lt;li&gt;Forwarding responses to queries (reports) from end devices to the
+querier.&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;In both cases it then uses the information of which port the querier is
+connected to, and which port(s) an IGMP/MLD reply was received on.
+These ports are then used to selectively: flood multicast data towards
+the querier, and forward multicast data (or not) to end devices.&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;The port where queries are received, this is where all multicast
+data should be flooded – it’s the distribution point for all
+multicast, which may or may not be routed further.&lt;/li&gt;
+  &lt;li&gt;The port(s) which send multicast subscription replies (reports)
+are recorded in “filters”, one filter per group (per VLAN) with a
+list of ports to forward to.&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;The bridge can be configured to, by default, flood or &lt;em&gt;not&lt;/em&gt; flood
+unknown multicast traffic to end devices.  In many setups you may want
+to prohibit flooding by default, so that multicast is only forwarded if
+an end device has subscribed to it.  However, due to limitations in the
+underlying switching chipsets, this “block by default” approach may not
+always be possible.  So, a compromise, which is also the Linux bridge’s
+default, is to have flooding of unknown/unregistered multicast per port
+enabled by default, and start filtering when it knows more.  I.e., when
+it has snooped its first IGMP/MLD report.&lt;/p&gt;
+
+&lt;h2&gt;Setup&lt;/h2&gt;
+
+&lt;p&gt;The setup presented in this blog post is very limited.  There are no
+VLAN trunk ports, only a basic bridge split in two separate broadcast
+domains.  Please see the &lt;a href=&quot;/2020/03/25/linux-networking-bridge/&quot;&gt;Linux Networking Bridge&lt;/a&gt; post if you want a
+refresher of the basics.&lt;/p&gt;
+
+&lt;p&gt;The default setup in &lt;a href=&quot;https://github.com/westermo/netbox/&quot;&gt;NetBox&lt;/a&gt; is to have all ports in VLAN 1, so add
+the second VLAN, move the ports, and remember to set &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;br0&lt;/code&gt; as tagged
+member of both VLANs:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;    IP: 192.168.1.1   vlan1     vlan2   IP: 192.168.2.1
+                           \   /
+                            br0
+                       ______|______
+                      |#_#_#_#_#_#_#|
+                      /  |   :  |    \ 
+                  eth0 eth1  :  eth2 eth3
+                             :
+                    VLAN 1   :    VLAN 2
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;With the basic setup out of the way, we enable multicast snooping and
+IGMPv3 proxy querier on the bridge.  This is the load bearing feature
+that we later build on with &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;querierd&lt;/code&gt;:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ bridge vlan global set vid 1 dev br0 mcast_snooping 1 mcast_querier 1 mcast_igmp_version 3
+$ bridge vlan global set vid 2 dev br0 mcast_snooping 1 mcast_querier 1 mcast_igmp_version 3
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;Enabling IGMP/MLD snooping per VLAN, and other per VLAN settings, on
+the bridge is only possible using iproute2 v5.16.0, or later.  In our
+examples we use &lt;a href=&quot;https://github.com/westermo/netbox/&quot;&gt;NetBox&lt;/a&gt;, which has all the necessary tools and a
+matching kernel.  See that project for how to build the OS profile of
+the &lt;em&gt;Zero&lt;/em&gt; target (x86_64) to play with this in Qemu (&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;make run&lt;/code&gt;).
+Remember to set &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;QEMU_N_NICS=4&lt;/code&gt;!&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;As soon as the vlan1 and vlan2 interfaces are UP, the bridge initiates
+IGMP queries on both VLANs, so you should see unique queries going out
+on all eth-ports.  In both &lt;a href=&quot;https://www.man7.org/linux/man-pages/man8/tcpdump.8.html&quot;&gt;tcpdump(8)&lt;/a&gt; and Wireshark you can see the
+IGMPv3 flag being set:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;joachim@wbg:~$ tcpdump -plni qtap3 
+tcpdump: verbose output suppressed, use -v or -vv for full protocol decode
+listening on qtap3, link-type EN10MB (Ethernet), capture size 262144 bytes
+17:26:05.697222 IP6 fe80::5054:ff:fe12:3456 &amp;gt; ff02::1: HBH ICMP6, multicast listener query v2 [gaddr ::], length 28
+17:26:05.697345 IP 0.0.0.0 &amp;gt; 224.0.0.1: igmp query v3
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;To see all the per-VLAN settings:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;root@zero:~# bridge vlan global show
+port              vlan-id
+br0               1-2
+                    mcast_snooping 1 mcast_querier 1 mcast_igmp_version 3 mcast_mld_version 2 mcast_last_member_count 2 mcast_last_member_interval 100 mcast_startup_query_count 2 mcast_startup_query_interval 3125 mcast_membership_interval 26000 mcast_querier_interval 25500 mcast_query_interval 12500 mcast_query_response_interval 1000 
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;The query interval (125 sec) and router timeout (255 sec) are default
+values from the RFCs.  Notice the scale of these, so if you want to
+change them you don’t set them too low!  See the RFC for recommended
+defaults, e.g. timeout = 2 * 125 + 10/2.&lt;/p&gt;
+
+&lt;h2&gt;querierd&lt;/h2&gt;
+
+&lt;p&gt;Now, to address the inherent problems of only having a proxy querier,
+mentioned in the introduction.  Westermo developed a small and basic
+querier daemon for userspace, called &lt;a href=&quot;https://github.com/westermo/querierd/&quot;&gt;querierd&lt;/a&gt;.  It is derived from
+the upstream &lt;a href=&quot;https://github.com/troglobit/mrouted/&quot;&gt;mrouted&lt;/a&gt; project and then whacked at with a bat to get
+into shape for its new task.&lt;/p&gt;
+
+&lt;p&gt;querierd is installed by default in NetBox, it starts up by default on
+&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;vlan1&lt;/code&gt;, so all we have to do is uncomment the second to last line to
+activate it also on our &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;vlan2&lt;/code&gt; interface:&lt;/p&gt;
+
+&lt;div class=&quot;language-conf highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;c&quot;&gt;# /etc/querierd.conf: default NetBox configuration
+&lt;/span&gt;
+&lt;span class=&quot;c&quot;&gt;# Query interval can be [1,1024], default 125.  Recommended not go below 10
+#query-interval 125
+&lt;/span&gt;
+&lt;span class=&quot;c&quot;&gt;# The interval inside the query-interval that clients should respond
+#query-response-interval 10
+&lt;/span&gt;
+&lt;span class=&quot;c&quot;&gt;# Last member query interval [1,1024], default 1.  The igmp-robustness
+# setting controls the last member query count.
+#query-last-member-interval 1
+&lt;/span&gt;
+&lt;span class=&quot;c&quot;&gt;# Querier's robustness can be [2,10], default 2.  Recommended to use 2
+#robustness 2
+&lt;/span&gt;
+&lt;span class=&quot;c&quot;&gt;# Controls the &quot;other querier present interval&quot;, used to detect when an
+# elected querier stops sending queries.  Leave this commented-out, it
+# is only available to override particular use-cases and interip with
+# devices that do not follow the RFC.  When commented out, the timeout
+# is calculated from the query interval and robustness according to RFC.
+#router-timeout 255
+&lt;/span&gt;
+&lt;span class=&quot;c&quot;&gt;# IP Option Router Alert is enabled by default, for interop with stacks
+# that hard-code the length of the IP header
+#no router-alert
+&lt;/span&gt;
+&lt;span class=&quot;c&quot;&gt;# Enable and one of the IGMP versions to use at startup, with fallback
+# to older versions if older clients appear.
+&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;iface&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;vlan1&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;enable&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;igmpv3&lt;/span&gt;
+&lt;span class=&quot;n&quot;&gt;iface&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;vlan2&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;enable&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;igmpv3&lt;/span&gt;
+&lt;span class=&quot;c&quot;&gt;#iface vlan3 enable igmpv3
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;If you want, you can uncomment also &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;vlan3&lt;/code&gt;, even though it doesn’t
+exist (yet), querierd does not go to the sad place, it’s just prepared
+to automatically start as soon as it’s added, UP, and has an IP address.&lt;/p&gt;
+
+&lt;p&gt;Remember to restart the daemon after you change its .conf file:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;root@zero:~# initctl restart querierd
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;To see the status, we use the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;querierctl&lt;/code&gt; tool:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;root@zero:~# querierctl -p
+Multicast Overview
+-------------------------------------------------------------------------------
+Query Interval          : 125 sec
+Robustness Value        : 2
+Router Timeout          : 255
+Fast Leave Ports        : 
+Router Ports            : 
+Flood Ports             : eth0, eth3, eth1, eth2
+
+Interface         State     Querier               Timeout  Ver
+-------------------------------------------------------------------------------
+vlan1             Up        192.168.1.1           None       3
+vlan2             Down      0.0.0.0               None       3
+
+ VID  Multicast MAC         Multicast Group       Ports
+-------------------------------------------------------------------------------
+   1  01:00:5E:7F:FF:FA     239.255.255.250       br0, eth0
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;This reminds us that we haven’t yet set an IP address, or even brought
+the interface UP!  So we do that, and assign the proper address (without
+restarting querierd):&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;root@zero:~# ip link set vlan2 up
+root@zero:~# ip addr add 192.168.2.1/24 dev vlan2
+root@zero:~# querierctl -p
+Multicast Overview
+-------------------------------------------------------------------------------
+Query Interval          : 125 sec
+Robustness Value        : 2
+Router Timeout          : 255
+Fast Leave Ports        : 
+Router Ports            : 
+Flood Ports             : eth0, eth3, eth1, eth2
+
+Interface         State     Querier               Timeout  Ver
+-------------------------------------------------------------------------------
+vlan1             Up        192.168.1.1           None       3
+vlan2             Up        192.168.2.1           None       3
+
+ VID  Multicast MAC         Multicast Group       Ports
+-------------------------------------------------------------------------------
+   1  01:00:5E:7F:FF:FA     239.255.255.250       br0, eth0
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;h2&gt;Exercise&lt;/h2&gt;
+
+&lt;p&gt;Now, as an exercise to the reader, you can start playing around with the
+setup.  &lt;a href=&quot;https://github.com/libnet/nemesis/&quot;&gt;Emulate IGMP&lt;/a&gt; reports from end devices, investigate
+the various querierctl commands, and compatibility output options.
+E.g., we use &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;-p&lt;/code&gt; here only to make the output more blog friendly.&lt;/p&gt;
+
+&lt;p&gt;Also, connect multiple NetBox devices, using &lt;a href=&quot;https://github.com/wkz/qeneth&quot;&gt;qeneth&lt;/a&gt; or GNS3, to test
+querier election (lowest IP in a LAN wins, except for 0.0.0.0), and
+router (querier) timeout with fail-over to another querierd.&lt;/p&gt;
+
+&lt;h2&gt;Future&lt;/h2&gt;
+
+&lt;p&gt;Much if the original innards of querierd have been gutted and new DNA
+strands grafted onto it from other related projects, such as &lt;a href=&quot;https://github.com/troglobit/pimd/&quot;&gt;pimd&lt;/a&gt;.
+The only missing part, currently, is the MLD v1/v2 querier support,
+which is planned to be grafted from &lt;a href=&quot;https://github.com/troglobit/pim6sd/&quot;&gt;pim6sd&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;There are however other possibilities, one such is to convert it to a
+full-blown &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;bridged&lt;/code&gt; (plans for this are currently shelved), which can
+take care of all the layer-2 bridge setup (port VLAN memberships, and
+all per-VLAN settings) and active functions like a querier for IGMP/MLD
+but also GMRP/MMRP for MAC based multicast subscription, and other types
+of layer-2 services and policy that don’t belong in the kernel.&lt;/p&gt;
+
+&lt;h2&gt;Footnotes&lt;/h2&gt;
+
+&lt;div class=&quot;footnotes&quot;&gt;
+  &lt;ol&gt;
+    &lt;li id=&quot;fn:1&quot;&gt;
+      &lt;p&gt;Well not really, there &lt;em&gt;is&lt;/em&gt; support for using the IP address of
+the bridge, but you do not want to use that since the kernel will go
+dumpster diving for &lt;em&gt;any&lt;/em&gt; address. &lt;a href=&quot;#fnref:1&quot; class=&quot;reversefootnote&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+    &lt;li id=&quot;fn:2&quot;&gt;
+      &lt;p&gt;A multicast router can be any of the DVMRP or PIM families of
+protocols.  Open implementations of these include, but are not
+limited to: &lt;a href=&quot;https://github.com/troglobit/mrouted/&quot;&gt;mrouted&lt;/a&gt;, &lt;a href=&quot;https://github.com/troglobit/pimd/&quot;&gt;pimd&lt;/a&gt;, &lt;a href=&quot;https://github.com/troglobit/pimd-dense/&quot;&gt;pimd-dense&lt;/a&gt;, and PIM-SM/SSM in
+&lt;a href=&quot;https://quagga.net/&quot;&gt;Quagga&lt;/a&gt;, and &lt;a href=&quot;https://frrouting.org/&quot;&gt;Frr&lt;/a&gt;. &lt;a href=&quot;#fnref:2&quot; class=&quot;reversefootnote&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+    &lt;li id=&quot;fn:3&quot;&gt;
+      &lt;p&gt;Remember, unregulated multicast is broadcast.  Meaning you can
+easily run into overloading your networks. &lt;a href=&quot;#fnref:3&quot; class=&quot;reversefootnote&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+  &lt;/ol&gt;
+&lt;/div&gt;</content>
+
+      
+      
+      
+      
+      
+
+      
+        <author>
+            <name>Joachim Wiberg</name>
+          
+          
+        </author>
+      
+
+      
+
+      
+        <category term="howto" />
+      
+        <category term="bridge" />
+      
+
+      
+        <summary type="html">This is the third post in a series of blog posts showing how to set up networking in Linux using low-level tools. In this part we talk about limiting the broadcast effects of multicast using IGMP/MLD snooping in the Linux bridge (software switch). Our context, as usual, is industrial networking with a focus on embedded devices.</summary>
+      
+
+      
+      
+    </entry>
+  
+  
+  
+    <entry>
+      
+      <title type="html">Bridge Forwarding Problem</title>
+      
+      
+      <link href="https://westermo.github.io/2021/06/24/bridge-forwarding-problem/" rel="alternate" type="text/html" title="Bridge Forwarding Problem" />
+      
+      <published>2021-06-24T11:21:42+02:00</published>
+      <updated>2022-02-18T18:02:36+01:00</updated>
+      <id>https://westermo.github.io/2021/06/24/bridge-forwarding-problem</id>
+      <content type="html" xml:base="https://westermo.github.io/2021/06/24/bridge-forwarding-problem/">&lt;p&gt;Recent Linux distributions (2021) have enabled &lt;em&gt;Bridge Firewalling&lt;/em&gt; by
+default.  In particular on Ubuntu 21.04 this has been known to cause a
+fair amount of head scratching!&lt;/p&gt;
+
+&lt;p&gt;This blog post shows how to rectify the problem using &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;sysctl&lt;/code&gt;.&lt;/p&gt;
+
+&lt;!-- more --&gt;
+
+&lt;p&gt;The relevant bridge settings can be seen with &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;sysctl&lt;/code&gt;:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ sysctl net.bridge
+net.bridge.bridge-nf-call-arptables = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+net.bridge.bridge-nf-call-iptables = 1
+net.bridge.bridge-nf-filter-pppoe-tagged = 0
+net.bridge.bridge-nf-filter-vlan-tagged = 0
+net.bridge.bridge-nf-pass-vlan-input-dev = 0
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;The culprits are the first three enabled bridge netfilter settings.
+They enable hooks in the bridge for trapping and dropping frames on
+different layers.&lt;/p&gt;
+
+&lt;p&gt;We create the file &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;/etc/sysctl.d/90-bridge-no-filter.conf&lt;/code&gt;
+by using a clever HERE script:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ sudo tee /etc/sysctl.d/90-bridge-no-filter.conf &amp;lt;&amp;lt;EOF
+net.bridge.bridge-nf-call-ip6tables = 0
+net.bridge.bridge-nf-call-iptables  = 0
+net.bridge.bridge-nf-call-arptables = 0
+EOF
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Activate the new settings by restarting the systemd service, or
+rebooting your system:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ sudo systemctl restart systemd-sysctl.service
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Verify that the new settings took:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ sysctl net.bridge
+net.bridge.bridge-nf-call-arptables = 0
+net.bridge.bridge-nf-call-ip6tables = 0
+net.bridge.bridge-nf-call-iptables = 0
+...
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;For more information on this topic, see the following libVirt wiki page:
+&lt;a href=&quot;https://wiki.libvirt.org/page/Net.bridge.bridge-nf-call_and_sysctl.conf&quot;&gt;https://wiki.libvirt.org/page/Net.bridge.bridge-nf-call_and_sysctl.conf&lt;/a&gt;&lt;/p&gt;</content>
+
+      
+      
+      
+      
+      
+
+      
+        <author>
+            <name>Joachim Wiberg</name>
+          
+          
+        </author>
+      
+
+      
+
+      
+        <category term="troubleshooting" />
+      
+
+      
+        <summary type="html">Recent Linux distributions (2021) have enabled Bridge Firewalling by default. In particular on Ubuntu 21.04 this has been known to cause a fair amount of head scratching! This blog post shows how to rectify the problem using sysctl.</summary>
+      
+
+      
+      
+    </entry>
+  
+  
+  
+    <entry>
+      
+      <title type="html">Tools of the Trade :: net namespaces</title>
+      
+      
+      <link href="https://westermo.github.io/2021/06/18/network-namespaces/" rel="alternate" type="text/html" title="Tools of the Trade :: net namespaces" />
+      
+      <published>2021-06-18T06:24:42+02:00</published>
+      <updated>2022-02-18T18:02:36+01:00</updated>
+      <id>https://westermo.github.io/2021/06/18/network-namespaces</id>
+      <content type="html" xml:base="https://westermo.github.io/2021/06/18/network-namespaces/">&lt;p&gt;This post shows how you can easily use Linux &lt;em&gt;network namespaces&lt;/em&gt; to
+isolate one or more physical (or virtual) network interfaces from the
+rest of your system.  Super useful when debugging network problems or
+developing networking applications.&lt;/p&gt;
+
+&lt;!-- more --&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;Note: all commands here may require the use of &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;sudo&lt;/code&gt;, unless you have
+&lt;a href=&quot;https://troglobit.com/2016/12/11/a-life-without-sudo/&quot;&gt;capabilities&lt;/a&gt;
+enabled for your user, for certain commands.  Try to avoid running as
+root, it can be avoided and saves you from a lot of headache.&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;h2&gt;Setup&lt;/h2&gt;
+
+&lt;p&gt;First, create a network namespace, call it what you like:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;ip netns add lab
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Now move your interface to it.  The interface will be completely removed
+from the “root” network namespace:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;ip link set eth1 netns lab
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;&lt;strong&gt;Note:&lt;/strong&gt; to move your interface back to the “root” network namespace
+from &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;lab&lt;/code&gt;, use &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;ip netns exec world ip link set eth1 netns 1&lt;/code&gt;&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;Bring up basic networking inside the namespace, remember: the loopback
+device is very important in Linux:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;ip netns exec lab ip addr add 127.0.0.1/8 dev lo
+ip netns exec lab ip link set lo up
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;I like to consider the netns as an end-device, so I usually rename the
+interface, which makes scripting after this point easier as well:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;ip netns exec lab ip link set eth1 down
+ip netns exec lab ip link set eth1 name eth0
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;You can also, optionally, add one or more VLAN interface(s) here, useful
+when you want to debug VLAN trunks.  Remember, if you add a VLAN in this
+step, make sure to use the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;eth0.1&lt;/code&gt; name in all the commands below this:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;ip netns exec lab ip link add link eth0 name eth0.1 type vlan id 1
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;At this point we can bring the interface(s) up and set IP address and
+routes on them, like this:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;ip netns exec lab ip link set eth1 up
+ip netns exec lab ip addr add 192.168.2.42/24 dev eth1
+
+ip netns exec lab ip rout add 192.168.2.0/24 dev eth1
+ip netns exec lab ip rout add default via 192.168.2.1   # optional!
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;It’s starting to get quite tedious to type &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;ip netns exec lab ...&lt;/code&gt; all
+the time.  So let’s start a shell inside the namespace, it’s almost like
+a proper container:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;ip netns exec lab bash
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Type &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;ifconfig&lt;/code&gt; or &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;ip link&lt;/code&gt; and &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;ip addr&lt;/code&gt; to see your setup.  You are
+completely isolated now from all the other network interfaces on your
+system.  From here on you can run &lt;a href=&quot;/2021/06/12/ping-and-tcpdump/&quot;&gt;ping and tcpdump&lt;/a&gt; freely without
+having to worry about your ping packets not properly egressing the right
+interface, or not catching all traffic that’s actually on the wire.&lt;/p&gt;
+
+&lt;h2&gt;Concluding Remarks&lt;/h2&gt;
+
+&lt;p&gt;When you exit your shell session and leave the network namespace, you
+may want to clean up and restore your interface back to the system:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;# Restore original name (avoid clashing when moving it back)
+ip netns exec lab ip link set eth0 down
+ip netns exec lab ip link set eth0 name eth1
+ip netns exec lab ip link set eth1 up
+
+# Remove the network namespace (loopback removed automatically)
+ip netns del lab
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Now, as an exercise, put all these commands in a script so you can more
+easily and safely repeat this every time you need it.  I have a script
+called &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;~/bin/usenet&lt;/code&gt;, which I call with &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;sudo usenet eth1&lt;/code&gt; :-)&lt;/p&gt;</content>
+
+      
+      
+      
+      
+      
+
+      
+        <author>
+            <name>Joachim Wiberg</name>
+          
+          
+        </author>
+      
+
+      
+
+      
+        <category term="howto" />
+      
+        <category term="tools" />
+      
+
+      
+        <summary type="html">This post shows how you can easily use Linux network namespaces to isolate one or more physical (or virtual) network interfaces from the rest of your system. Super useful when debugging network problems or developing networking applications.</summary>
+      
+
+      
+      
+    </entry>
+  
+  
+  
+    <entry>
+      
+      <title type="html">Tools of the Trade :: ping &amp;amp; tcpdump</title>
+      
+      
+      <link href="https://westermo.github.io/2021/06/12/ping-and-tcpdump/" rel="alternate" type="text/html" title="Tools of the Trade :: ping &amp; tcpdump" />
+      
+      <published>2021-06-12T07:16:23+02:00</published>
+      <updated>2022-02-18T18:02:36+01:00</updated>
+      <id>https://westermo.github.io/2021/06/12/ping-and-tcpdump</id>
+      <content type="html" xml:base="https://westermo.github.io/2021/06/12/ping-and-tcpdump/">&lt;p&gt;Continuing the series with another set of really useful tools to know:
+&lt;a href=&quot;https://www.man7.org/linux/man-pages/man8/ping.8.html&quot;&gt;ping(8)&lt;/a&gt; and
+&lt;a href=&quot;https://www.man7.org/linux/man-pages/man8/tcpdump.8.html&quot;&gt;tcpdump(8)&lt;/a&gt;.
+They can be used to localize issues in just about any network setup.&lt;/p&gt;
+
+&lt;p&gt;Ping is capable of generating unicast, multicast, and broadcast traffic.
+While tcpdump is capable of capturing, formatting, &lt;em&gt;and most importantly
+filtering&lt;/em&gt; all types of traffic.&lt;/p&gt;
+
+&lt;!-- more --&gt;
+
+&lt;p&gt;Recall the last picture from &lt;a href=&quot;/2020/03/25/linux-networking-bridge/&quot;&gt;Linux Networking Bridge&lt;/a&gt;:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;  vlan1     vlan2              vlan1     vlan2
+       \   /                        \   /
+        br0  1T,2T                   br0  1T,2T,3T
+     ____|____                    ____|__________
+    [#_#_#_#_#]                  [#_#_#_#_#_#_#_#]
+    /  |      \                  /  |   |   \    \
+eth2  eth1     eth0----------eth0 eth1 eth2  eth3 eth4
+ 2U    1U             1T,2T        1U   2U    3U   3U
+ |     |                           |    |     |    |
+ |     |                           |    |     |    |
+eth0  eth0                        eth0 eth0  eth0 eth0
+ED1   ED2                         ED3  ED4   ED5  ED6
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;&lt;em&gt;Figure 1: All end-devices (ED) have a single interface &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;eth0&lt;/code&gt;&lt;/em&gt;&lt;/p&gt;
+
+&lt;p&gt;Much can go wrong setting that up.  Not just with the standard Linux
+bridge, but also with any HW offloading switch, and their respective
+drivers.   To test the setup we can use our friends ping and tcpdump.
+The following subnets and IP addresses are used:&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;Subnets:&lt;/strong&gt;&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;VLAN 1: 192.168.1.0/24&lt;/li&gt;
+  &lt;li&gt;VLAN 2: 192.168.2.0/24&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;&lt;strong&gt;Left:&lt;/strong&gt;&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;vlan1: 192.168.1.1&lt;/li&gt;
+  &lt;li&gt;vlan2: 192.168.2.1&lt;/li&gt;
+  &lt;li&gt;ED1: 192.168.2.11&lt;/li&gt;
+  &lt;li&gt;ED2: 192.168.1.11&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;&lt;strong&gt;Right:&lt;/strong&gt;&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;vlan1: 192.168.1.2&lt;/li&gt;
+  &lt;li&gt;vlan2: 192.168.2.2&lt;/li&gt;
+  &lt;li&gt;ED3: 192.168.1.22&lt;/li&gt;
+  &lt;li&gt;ED4: 192.168.2.22&lt;/li&gt;
+  &lt;li&gt;ED5: 192.168.3.33&lt;/li&gt;
+  &lt;li&gt;ED6: 192.168.3.34&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2&gt;Connectivity Between 2.11 and 2.22&lt;/h2&gt;
+
+&lt;p&gt;We start by verifying connectivity between ED1 on the left and ED4 on
+the right.  They should both be untagged members in VLAN 2, and the VLAN
+trunk between the bridges should carry the same VLAN tagged.  From ED1:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;root@ed1:~# ping 192.168.2.22
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;If we don’t get a reply we can check with tcpdump on ED4:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;root@ed4:~# tcpdump -lni eth0 icnmp
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Dead silence.  So we go back to ED1 and change to a broadcast ping, this
+should reach everyone connected to VLAN 2.  We check this with tcpdump
+on all other ports.  First we check to see if we see anything on the
+left bridge’s VLAN 2:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;root@ed1:~# ping -b 192.168.2.255
+root@left:~# tcpdump -lni vlan2 icmp
+tcpdump: verbose output suppressed, use -v[v]... for full protocol decode
+listening on vlan2, link-type EN10MB (Ethernet), snapshot length 262144 bytes
+08:49:32.306657 IP 192.168.2.11 &amp;gt; 192.168.2.255: ICMP echo request, id 5, seq 54, length 64
+08:49:33.330651 IP 192.168.2.11 &amp;gt; 192.168.2.255: ICMP echo request, id 5, seq 55, length 64
+08:49:34.354554 IP 192.168.2.11 &amp;gt; 192.168.2.255: ICMP echo request, id 5, seq 56, length 64
+08:49:35.378632 IP 192.168.2.11 &amp;gt; 192.168.2.255: ICMP echo request, id 5, seq 57, length 64
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Here we see the ICMP traffic, so we can move on to check if we get the
+same traffic on the right-hand bridge as well:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;root@right:~# tcpdump -lni vlan2 icmp
+tcpdump: verbose output suppressed, use -v[v]... for full protocol decode
+listening on vlan2, link-type EN10MB (Ethernet), snapshot length 262144 bytes
+08:51:58.738186 IP 192.168.2.11 &amp;gt; 192.168.2.255: ICMP echo request, id 5, seq 197, length 64
+08:51:59.762284 IP 192.168.2.11 &amp;gt; 192.168.2.255: ICMP echo request, id 5, seq 198, length 64
+08:52:00.786212 IP 192.168.2.11 &amp;gt; 192.168.2.255: ICMP echo request, id 5, seq 199, length 64
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Yup, so what’s wrong here?  Verify the VLAN membership on the bridge:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;root@right:~# bridge vlan
+port              vlan-id
+eth4              3 PVID Egress Untagged
+eth3              3 PVID Egress Untagged
+eth2              1 PVID Egress Untagged
+eth1              2 PVID Egress Untagged
+eth0              1
+                  2
+br0               1
+                  2
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;There we have it!  Ports &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;eth1&lt;/code&gt; and &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;eth2&lt;/code&gt; had been mixed up in their
+VLAN assignments!&lt;/p&gt;
+
+&lt;h2&gt;Deep Dive in the Stack&lt;/h2&gt;
+
+&lt;p&gt;Now that we’ve covered a basic troubleshooting case, let’s dive into the
+various layers in the networking stack of one of the bridging devices.&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;    IP: 192.168.1.1   vlan1     vlan2   IP: 192.168.2.1
+                           \   /
+                            br0
+                       ______|______
+                      |#_#_#_#_#_#_#|
+                      /  |   :  |    \ 
+                  eth1 eth2  :  eth3 eth4
+                             :
+                    VLAN 1   :    VLAN 2
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;We use the same basic tools, inject ICMP traffic with ping on one port
+and use tcpdump to see where it ends up.  Here we’ll use broadcast from
+an “end-device” attached to eth0:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;    IP: 192.168.1.1   vlan1     vlan2   IP: 192.168.2.1
+                           \   /
+                            br0
+NS1: 192.168.1.10      ______|______
+--------.             |#_#_#_#_#_#_#|
+lo      :             /  |   :  |    \ 
+eth0    :         eth1 eth2  :  eth3 eth4
+    `-------------'          :
+--------'           VLAN 1   :    VLAN 2
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;The “end-device” is a network namespace on a dedicated device, with a
+dedicated network card, or a VETH pair with one end in the namespace,
+and the other attached to the bridge.  The latter is useful for testing
+on the same device where the bridge runs.&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;root@ns1:~# ping -b 192.168.1.255
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;On the system itself we can start by running tcpdump at the bottom, the
+interface connected to the bridge.  This should work regardless if the
+system has bridging (switch) offloading to an underlying hardware, since
+broadcast is forwarded to all hosts on a LAN.&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;root@system:~# tcpdump -lni eth1 icmp
+tcpdump: verbose output suppressed, use -v[v]... for full protocol decode
+listening on eth3, link-type EN10MB (Ethernet), snapshot length 262144 bytes
+09:05:26.671368 IP 192.168.1.10 &amp;gt; 192.168.1.255: ICMP echo request, id 5, seq 986, length 64
+09:05:27.695401 IP 192.168.1.10 &amp;gt; 192.168.1.255: ICMP echo request, id 5, seq 987, length 64
+09:05:28.719354 IP 192.168.1.10 &amp;gt; 192.168.1.255: ICMP echo request, id 5, seq 988, length 64
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Here we can see basic ICMP frames, nothing strange, but we know there’s
+more going on here, so we add &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;-e&lt;/code&gt; to get the Ethernet header as well:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;root@system:~# tcpdump -elni eth1 icmp
+tcpdump: verbose output suppressed, use -v[v]... for full protocol decode
+listening on eth1, link-type EN10MB (Ethernet), snapshot length 262144 bytes
+09:07:01.903045 3c:18:a0:07:32:46 &amp;gt; ff:ff:ff:ff:ff:ff, ethertype IPv4 (0x0800), length 98: 192.168.1.10 &amp;gt; 192.168.1.255: ICMP echo request, id 5, seq 1079, length 64
+09:07:02.927090 3c:18:a0:07:32:46 &amp;gt; ff:ff:ff:ff:ff:ff, ethertype IPv4 (0x0800), length 98: 192.168.1.10 &amp;gt; 192.168.1.255: ICMP echo request, id 5, seq 1080, length 64
+09:07:03.951079 3c:18:a0:07:32:46 &amp;gt; ff:ff:ff:ff:ff:ff, ethertype IPv4 (0x0800), length 98: 192.168.1.10 &amp;gt; 192.168.1.255: ICMP echo request, id 5, seq 1081, length 64
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Nothing much interesting still, just a standard Ethernet header.
+Destination address ff:ff:ff:ff:ff:ff is the broadcast address,
+and 3c:18:a0:07:32:46 is the source MAC address of eth0 in the
+NS1 namespace.  The type/len field is 0x0800, which tcpdump has
+translated to IPv4 for us.&lt;/p&gt;
+
+&lt;p&gt;OK, so port &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;eth1&lt;/code&gt; is attached to the bridge, let’s check the
+bridge interface to see if there’s anything interesting going
+on there, again with the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;-e&lt;/code&gt; option:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;root@system:~# tcpdump -elni br0 icmp
+tcpdump: verbose output suppressed, use -v[v]... for full protocol decode
+listening on br0, link-type EN10MB (Ethernet), snapshot length 262144 bytes
+09:08:25.870765 3c:18:a0:07:32:46 &amp;gt; ff:ff:ff:ff:ff:ff, ethertype 802.1Q (0x8100), length 102: vlan 1, p 0, ethertype IPv4 (0x0800), 192.168.2.42 &amp;gt; 192.168.2.255: ICMP echo request, id 5, seq 1161, length 64
+09:08:26.894762 3c:18:a0:07:32:46 &amp;gt; ff:ff:ff:ff:ff:ff, ethertype 802.1Q (0x8100), length 102: vlan 1, p 0, ethertype IPv4 (0x0800), 192.168.2.42 &amp;gt; 192.168.2.255: ICMP echo request, id 5, seq 1162, length 64
+09:08:27.918788 3c:18:a0:07:32:46 &amp;gt; ff:ff:ff:ff:ff:ff, ethertype 802.1Q (0x8100), length 102: vlan 1, p 0, ethertype IPv4 (0x0800), 192.168.2.42 &amp;gt; 192.168.2.255: ICMP echo request, id 5, seq 1163, length 64
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Finally, something interesting!  On ingress the bridge has marked all
+ICMP frames from NS1 as member of VLAN 1.  This is called a VLAN “tag”
+and all Ethernet frames inside the bridge has one (in a bridge with
+&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;vlan_filtering&lt;/code&gt; enabled).  It is used to determine which ports in
+a bridge that are eligible to receive the frame, only our tagged and
+untagged ports in VLAN 1 in this case.  Since this is broadcast, all
+ingressing frames will egress all other ports in VLAN 1.&lt;/p&gt;
+
+&lt;p&gt;If we change to ping the unicast address of the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;vlan1&lt;/code&gt; interface on
+&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;br0&lt;/code&gt;, a few other interesting things emerge:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;root@ns1:~# ping 192.168.1.1
+PING 192.168.1.10 (192.168.2.122) 56(84) bytes of data.
+64 bytes from 192.168.1.1: icmp_seq=1 ttl=64 time=1.08 ms
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;First of all, we get a reply!  By default, Linux does not reply to
+broadcast pings (configurable, but outside the scope of this blog, see
+&lt;a href=&quot;https://www.man7.org/linux/man-pages/man8/sysctl.8.html&quot;&gt;sysctl(8)&lt;/a&gt;).
+The output from tcpdump on our system tells a similar story, only the
+destination MAC address is now first the MAC address of the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;vlan1&lt;/code&gt;
+interface, and then in the reply, the MAC address of our &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;eth0&lt;/code&gt; in
+NS1.&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;root@system:~# tcpdump -elni br0 icmp
+tcpdump: verbose output suppressed, use -v[v]... for full protocol decode
+listening on br0, link-type EN10MB (Ethernet), snapshot length 262144 bytes
+09:20:26.272791 3c:18:a0:07:32:46 &amp;gt; 0e:de:c5:a9:cb:01, ethertype 802.1Q (0x8100), length 102: vlan 1, p 0, ethertype IPv4 (0x0800), 192.168.2.42 &amp;gt; 192.168.2.122: ICMP echo request, id 6, seq 6, length 64
+09:20:26.273073 0e:de:c5:a9:cb:01 &amp;gt; 3c:18:a0:07:32:46, ethertype 802.1Q (0x8100), length 102: vlan 1, p 0, ethertype IPv4 (0x0800), 192.168.2.122 &amp;gt; 192.168.2.42: ICMP echo reply, id 6, seq 6, length 64
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;The bridge has &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;learning&lt;/code&gt; enabled and figures out the port to forward
+the reply on using its forwarding database (FDB), let’s inspect it!&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;The FDB is for unicast and the MDB is for multicast addresses.  On
+some physical switchcore fabrics this is a single entity, sometimes
+referred to as Address Translation Unit (ATU)&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;root@system:~# bridge fdb show
+...
+3c:18:a0:07:32:46 dev eth1 vlan 1 master br0
+...
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;There’s a lot of output, but the interesting line is the one matching
+the MAC address we’re looking for.  This line tells us the end station
+is downstream on port &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;eth1&lt;/code&gt;, and we learned this on VLAN 1 and on
+bridge &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;br0&lt;/code&gt;.  So we check with tcpdump that we only see the reply
+on port &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;eth1&lt;/code&gt;:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;root@basis:~# tcpdump -elni eth1 icmp
+tcpdump: verbose output suppressed, use -v[v]... for full protocol decode
+listening on eth1, link-type EN10MB (Ethernet), snapshot length 262144 bytes
+09:32:27.118368 3c:18:a0:07:32:46 &amp;gt; 0e:de:c5:a9:cb:01, ethertype IPv4 (0x0800), length 98: 192.168.2.42 &amp;gt; 192.168.2.122: ICMP echo request, id 7, seq 1, length 64
+09:32:27.118739 0e:de:c5:a9:cb:01 &amp;gt; 3c:18:a0:07:32:46, ethertype IPv4 (0x0800), length 98: 192.168.2.122 &amp;gt; 192.168.2.42: ICMP echo reply, id 7, seq 1, length 64
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Yup, only on &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;eth1&lt;/code&gt; and we also see that the bridge has stripped the
+VLAN tag from the frame on egreess to the wire.  Remember, port &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;eth1&lt;/code&gt;
+is an &lt;em&gt;untagged&lt;/em&gt; member of VLAN 1 on &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;br0&lt;/code&gt;.&lt;/p&gt;</content>
+
+      
+      
+      
+      
+      
+
+      
+        <author>
+            <name>Joachim Wiberg</name>
+          
+          
+        </author>
+      
+
+      
+
+      
+        <category term="howto" />
+      
+        <category term="tools" />
+      
+
+      
+        <summary type="html">Continuing the series with another set of really useful tools to know: ping(8) and tcpdump(8). They can be used to localize issues in just about any network setup. Ping is capable of generating unicast, multicast, and broadcast traffic. While tcpdump is capable of capturing, formatting, and most importantly filtering all types of traffic.</summary>
+      
+
+      
+      
+    </entry>
+  
+  
+  
+    <entry>
+      
+      <title type="html">Tools of the Trade :: dnsmasq &amp;amp; console</title>
+      
+      
+      <link href="https://westermo.github.io/2021/06/10/dnsmasq-and-conserver/" rel="alternate" type="text/html" title="Tools of the Trade :: dnsmasq &amp; console" />
+      
+      <published>2021-06-10T17:37:42+02:00</published>
+      <updated>2022-02-18T18:02:36+01:00</updated>
+      <id>https://westermo.github.io/2021/06/10/dnsmasq-and-conserver</id>
+      <content type="html" xml:base="https://westermo.github.io/2021/06/10/dnsmasq-and-conserver/">&lt;p&gt;This is the first post, in hopefully a series, detailing tools we
+networking and switch geeks love.  We start with the underrated
+and oft forgotten dnsmasq and conserver.&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;
+    &lt;p&gt;&lt;a href=&quot;https://thekelleys.org.uk/dnsmasq/doc.html&quot;&gt;dnsmasq&lt;/a&gt; will be used
+to hand out BOOTP/DHCP leases to our embedded systems, as well as
+serve firmware images using TFTP&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;&lt;a href=&quot;https://www.conserver.com/&quot;&gt;conserver&lt;/a&gt; will be used to connect to
+our device’s console port so we can access the bootloader and
+net-boot it from dnsmasq&lt;/p&gt;
+  &lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;!-- more --&gt;
+
+&lt;h2&gt;Install&lt;/h2&gt;
+
+&lt;p&gt;Westermo is almost exclusively a Debian/Ubuntu and Linux Mint shop, so
+all package install will be done using &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;apt&lt;/code&gt;, the same packages exist in
+other Linux distros as well.&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;sudo apt install dnsmasq conserver-server conserver-client
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Done.  We now proceed to configure the daemons, please note, this is
+only an example and you can set them up in a myriad of ways.&lt;/p&gt;
+
+&lt;h2&gt;Configure dnsmasq&lt;/h2&gt;
+
+&lt;p&gt;Some systems may have dnsmasq installed, either the system itself uses
+it as a caching DNS (not mentioned in this blog post), or you have
+libVirt and virt-manager installed.  That is fine, this blog post allows
+you to have multiple configurations running at the same time, yet still
+be quite user friendly.&lt;/p&gt;
+
+&lt;p&gt;The traditional &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;/etc/dnsmasq.conf&lt;/code&gt; has today mostly been replaced with
+the new &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;/etc/dnsmasq.d/&lt;/code&gt; directory where you can add multiple files.&lt;/p&gt;
+
+&lt;p&gt;Let’s create &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;/etc/dnsmasq.d/foo.conf&lt;/code&gt;, please note the interface names
+are for my PC, yours may be very different:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;# You may need to uncomment this, depending on other
+# services also using dnsmasq
+#bind-dynamic
+bootp-dynamic
+
+dhcp-host=id:basis,set:basis
+dhcp-host=id:coronet,set:coronet
+dhcp-host=id:dagger,set:dagger
+dhcp-host=id:envoy,set:envoy
+dhcp-host=id:zero,set:zero
+
+enable-tftp
+tftp-root=/srv/ftp
+
+dhcp-boot=tag:basis,netbox-os-basis.img
+dhcp-boot=tag:coronet,netbox-os-coronet.img
+dhcp-boot=tag:dagger,netbox-os-dagger.bin
+dhcp-boot=tag:envoy,netbox-os-envoy.bin
+dhcp-boot=tag:zero,netbox-os-zero.bin
+
+dhcp-range=tag:eth1,192.168.2.100,192.168.2.199,1h
+dhcp-range=tag:usb0,192.168.2.100,192.168.2.199,1h
+dhcp-range=tag:usb1,192.168.2.100,192.168.2.199,1h
+
+except-interface=lo
+except-interface=eth0
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;&lt;strong&gt;NOTE:&lt;/strong&gt; You &lt;em&gt;need&lt;/em&gt; to change the interface name in &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;dhcp-range&lt;/code&gt;
+to match &lt;em&gt;your interface(s)&lt;/em&gt;. These interfaces also need to have
+an IP address in the same subnet as used above, or change the
+DHCP range to match your interface(s).&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;The &lt;a href=&quot;(https://thekelleys.org.uk/dnsmasq/docs/dnsmasq-man.html)&quot;&gt;dnsmasq(8)&lt;/a&gt; manual page is the authoritative documentation, so
+check that for the syntax of each command.  This blog post will only
+skim through the most important settings.&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;enable-tftp&lt;/code&gt; and &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;tftp-root&lt;/code&gt; enables the built-in TFTP server,
+this is where dnsmasq expects the bootfiles to reside&lt;/li&gt;
+  &lt;li&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;dhcp-host&lt;/code&gt; matches the DHCP ClientID, sent by our bootloader,
+&lt;a href=&quot;https://barebox.org/&quot;&gt;BareBox&lt;/a&gt;.  This sets the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;tag&lt;/code&gt;, which can be used to associate
+DHCP options to matching clients&lt;/li&gt;
+  &lt;li&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;dhcp-boot&lt;/code&gt; enables both DHCP option 66 (boot server) and option 67
+(bootfile) and is set to one of the two files based on what host is
+matched in the previous step&lt;/li&gt;
+  &lt;li&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;dhcp-range&lt;/code&gt; is the range of IP addresses to hand out to clients as
+their DHCP lease, based on the interface where the DHCP Discover is
+received on.  In our example, only three interfaces are allowed to
+serve DHCP on: &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;eth1&lt;/code&gt;, &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;usb0&lt;/code&gt;, and &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;usb1&lt;/code&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;except-interface&lt;/code&gt; is probably the &lt;em&gt;most important&lt;/em&gt; setting here,
+it ensures we do not accidentally start service DHCP leases on our
+home or office network …&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Enable the configuration by restarting the daemon:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;sudo systemctl restart dnsmasq.service
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;h2&gt;Configure conserver&lt;/h2&gt;
+
+&lt;p&gt;Modify the file &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;/etc/conserver/conserver.cf&lt;/code&gt; to look something like this:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;config * {
+}
+
+access * {
+        trusted 127.0.0.1;
+#       trusted wkz-wmo.local;
+#       trusted 192.168.0.0/16;
+#       allowed 192.168.0.0/16;
+}
+
+default full {
+        rw *;
+}
+
+# The '&amp;amp;' in logfile name is substituted with the console name.
+default * {
+        logfile /var/log/conserver/&amp;amp;.log;
+        timestamp &quot;&quot;;
+        include full;
+        options reinitoncc;
+}
+
+default ser {
+        type device;
+        device /dev/X;
+        devicesubst X=cs;
+        baud 115200;
+        parity none;
+        options !ixon,!ixoff;
+        master localhost;
+}
+
+console ttyS0   { include ser; }
+console ttyUSB0 { include ser; }
+console ttyUSB1 { include ser; }
+console ttyUSB2 { include ser; }
+console ttyUSB3 { include ser; }
+console ttyUSB4 { include ser; }
+console ttyUSB5 { include ser; }
+console ttyUSB6 { include ser; }
+console ttyACM0 { include ser; }
+console ttyACM1 { include ser; }
+console ttyACM2 { include ser; }
+console ttyACM3 { include ser; }
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Enable the configuration by restarting the daemon:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;sudo systemctl restart conserver-server.service
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;h2&gt;Running&lt;/h2&gt;
+
+&lt;p&gt;With an embedded device connected to your PC, here &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;/dev/ttyUSB0&lt;/code&gt; (see
+&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;sudo dmesg&lt;/code&gt; to find the TTY name of the device you plugged in):&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;console ttyUSB0
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;Use &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;^ec?&lt;/code&gt; to get help, i.e. hold down &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Ctrl&lt;/code&gt; and press &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;e&lt;/code&gt; &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;c&lt;/code&gt; &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;?&lt;/code&gt;&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;Westermo devices can load their firmware over the network if you stop
+the bootloader early with &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;^C&lt;/code&gt;, i.e. hold down &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Ctrl&lt;/code&gt; and press &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;c&lt;/code&gt;
+until you get to the boot menu, where you select &lt;em&gt;Shell&lt;/em&gt;.  Here you
+can use all &lt;a href=&quot;https://barebox.org/&quot;&gt;BareBox&lt;/a&gt; commands, or call our factory default scripts
+to start network boot:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;boot net
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;This tells the bootloader to first send a DHCP Discover request to our
+DHCP server (dnsmasq), which then hands out a DHCP Lease with options
+66 and 67 detailing where to fetch the firmware.  The bootloader then
+proceeds to connect to dnsmasq again, this time using TFTP, to fetch
+the file.  When the file has been retrieved, its checksum is validated
+before it is mounted by BareBox and the kernel extracted from &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;/boot&lt;/code&gt;
+inside the firmware image.  Then we’re off!&lt;/p&gt;</content>
+
+      
+      
+      
+      
+      
+
+      
+        <author>
+            <name>Joachim Wiberg</name>
+          
+          
+        </author>
+      
+
+      
+
+      
+        <category term="howto" />
+      
+        <category term="tools" />
+      
+
+      
+        <summary type="html">This is the first post, in hopefully a series, detailing tools we networking and switch geeks love. We start with the underrated and oft forgotten dnsmasq and conserver. dnsmasq will be used to hand out BOOTP/DHCP leases to our embedded systems, as well as serve firmware images using TFTP conserver will be used to connect to our device’s console port so we can access the bootloader and net-boot it from dnsmasq</summary>
+      
+
+      
+      
+    </entry>
+  
+  
+  
+    <entry>
+      
+      <title type="html">Linux Networking Bridge</title>
+      
+      
+      <link href="https://westermo.github.io/2020/03/25/linux-networking-bridge/" rel="alternate" type="text/html" title="Linux Networking Bridge" />
+      
+      <published>2020-03-25T00:20:42+01:00</published>
+      <updated>2022-02-18T18:02:36+01:00</updated>
+      <id>https://westermo.github.io/2020/03/25/linux-networking-bridge</id>
+      <content type="html" xml:base="https://westermo.github.io/2020/03/25/linux-networking-bridge/">&lt;p&gt;This is the second post in a series of posts showing how to set up
+networking in Linux using low-level tools.&lt;/p&gt;
+
+&lt;p&gt;It’s time to talk about bridging (switching) and VLANs.&lt;/p&gt;
+
+&lt;!-- more --&gt;
+
+&lt;h2&gt;Bridging, or Switching&lt;/h2&gt;
+
+&lt;p&gt;The &lt;a href=&quot;/2020/03/24/linux-networking-intro/&quot;&gt;fist post&lt;/a&gt;
+introduced LANs and broadcast domains.  An Ethernet bridge, or more
+commonly, a switch, connects multiple networks segments into a common
+broadcast domain.  If you are interested in this, see &lt;a href=&quot;https://en.wikipedia.org/wiki/Bridging_(networking)&quot;&gt;the Wikipedia
+page on bridging&lt;/a&gt;
+for details.&lt;/p&gt;
+
+&lt;p&gt;In Linux we can create a software defined switch by adding multiple
+network interfaces (NICs) to a PC and then connect them to the bridge
+module.  In this setup these interfaces are called ports, and we don’t
+set IP addresses on them.  Instead, we do that on the bridge, and on
+interfaces on top of the bridge.&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;                    br0          &amp;lt;---- bridge interface
+                 ____|____
+                |#_#_#_#_#|      &amp;lt;---- bridge
+                /  |   |  \
+            eth0 eth1 eth2 eth3  &amp;lt;---- ports
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;h2&gt;Virtual LANs, VLANs&lt;/h2&gt;
+
+&lt;p&gt;To kick things up a notch we need to introduce one more concept before
+moving on – &lt;a href=&quot;https://en.wikipedia.org/wiki/IEEE_802.1Q&quot;&gt;VLANs&lt;/a&gt;!&lt;/p&gt;
+
+&lt;p&gt;A VLAN, or &lt;em&gt;virtual&lt;/em&gt; LAN, is one of the true corner stones in most
+network setups, and as such is really deserves a blog post of its own.&lt;/p&gt;
+
+&lt;p&gt;However, for the purpose of this post, consider VLANs a way for us to
+&lt;em&gt;group ports&lt;/em&gt; in separate broadcast domains.  I.e., isolate certain end
+devices from each other; e.g., an office network from a process control
+network.&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;                      br0
+                 ______|______
+                |#_#_#_#_#_#_#|
+                /  |   :  |    \ 
+            eth0 eth1  :  eth2 eth3
+                       :
+              VLAN 1   :    VLAN 2
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Here we have configured the bridge (switch) to assign ports eth0 and
+eth1 to VLAN 1, and eth2 and eth3 to VLAN 2.  Ports in each VLAN can
+only communicate with each other, the bridge ensures a true separation
+between both VLANs.&lt;/p&gt;
+
+&lt;p&gt;If a device on port eth0 (member of VLAN 1) wants to communicate with a
+device on port eth3 (member of VLAN 2) it must be routed somehow.  For
+this to work we must either connect a router to ports eth1 and eth2, or
+let interface br0 be a member of both VLANs.&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;A port that is member of more than one VLAN is often referred to as a
+&lt;em&gt;trunk port&lt;/em&gt;, and a port facing an end device is called &lt;em&gt;access port&lt;/em&gt;.&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;Port VLAN memberships can be &lt;em&gt;tagged&lt;/em&gt; or &lt;em&gt;untagged&lt;/em&gt;.  A tagged port is
+usually a trunk port, and an untagged port is usually an access port.
+There are always exceptions to these rules, but for most cases this is a
+good starting point.&lt;/p&gt;
+
+&lt;p&gt;To route traffic between VLAN 1 and VLAN 2 we create the following
+setup (it’s starting to look a bit crazy now):&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;IP: 192.168.1.1                     IP: 192.168.2.1
+                  br0.1     br0.2
+                       \   /
+                        br0
+                   ______|______
+                  |#_#_#_#_#_#_#|
+                  /  |   :  |    \ 
+              eth0 eth1  :  eth2 eth3
+                         :
+                VLAN 1   :    VLAN 2
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Since &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;br0&lt;/code&gt; now is a tagged member of both VLANs we need to create VLAN
+interfaces on top of it to be able to set IP addresses.  These are the
+gateway addresses each end device will use in their IP network setup.&lt;/p&gt;
+
+&lt;p&gt;That is basically it, remember to enable IP forwarding … now let’s get
+hands-on with the command line!&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;In the next section we use the names &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;vlan1&lt;/code&gt; and &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;vlan2&lt;/code&gt; instead of
+&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;br0.1&lt;/code&gt; and &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;br0.2&lt;/code&gt;, respectively.  The naming is not only create
+confusion, but to a) show that any name can be used, and b) simplify
+and follow the terminology used in Westermo WeOS.&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;h2&gt;Creating a Bridge in Linux&lt;/h2&gt;
+
+&lt;p&gt;There are actually two variants of the standard bridge in mainline
+Linux; old-style and new-style.  The latter, which we will focus on in
+this blog post, has native support for VLAN filtering.&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;# ip link add br0 type bridge
+# ip link set br0 type bridge vlan_filtering 1
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;&lt;strong&gt;Note:&lt;/strong&gt; recent versions of Debian based systems, like Ubuntu, have
+enabled bridge firewalling by default.  This may completely disable
+all or some forwarding of traffic on bridges.  Causing a lot of head
+scratching!  See &lt;a href=&quot;/2021/06/24/bridge-forwarding-problem/&quot;&gt;Bridge Forwarding Problem&lt;/a&gt; for a fix!&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;Now, add a couple of ports to the bridge:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;# ip link set eth0 master br0
+# ip link set eth1 master br0
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;To see the ports we use the &lt;a href=&quot;http://man7.org/linux/man-pages/man8/bridge.8.html&quot;&gt;bridge(8)&lt;/a&gt; command, which is also part
+of the iproute2 tool suite:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;# bridge link
+2: eth0: &amp;lt;BROADCAST,MULTICAST&amp;gt; mtu 1500 master br0 state disabled priority 32 cost 100 
+4: eth1: &amp;lt;BROADCAST,MULTICAST&amp;gt; mtu 1500 master br0 state disabled priority 32 cost 4 
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;To see the default VLAN assignments of ports:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;# bridge vlan show
+port    vlan ids
+eth0     1 PVID Egress Untagged
+eth1     1 PVID Egress Untagged
+br0      1 PVID Egress Untagged
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;So these ports look OK, the default VLAN ID assigned to ports is 1.
+Lets add the other two, but now we need to tell the bridge to use VLAN
+ID 2 instead.  We also set the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;pvid&lt;/code&gt; and &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;untagged&lt;/code&gt; flags since we
+want to treat these ports as access ports (untagged), and assign their
+default VLAN (ID 2) on ingress (pvid).  Remember to remove from their
+default VLAN (ID 1) as well:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;# ip link set eth2 master br0
+# ip link set eth3 master br0
+# bridge vlan add vid 2 dev eth2 pvid untagged
+# bridge vlan add vid 2 dev eth3 pvid untagged
+# bridge vlan del vid 1 dev eth2
+# bridge vlan del vid 1 dev eth3
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;To see static and learned MAC addresses (c.f. the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;arp&lt;/code&gt; command):&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;# bridge fdb show
+00:80:e1:42:55:a3 dev eth0 vlan 1 master br0 permanent
+00:80:e1:42:55:a3 dev eth0 master br0 permanent
+33:33:00:00:00:01 dev eth0 self permanent
+00:e0:4c:68:03:06 dev eth1 vlan 1 master br0 permanent
+00:e0:4c:68:03:06 dev eth1 master br0 permanent
+33:33:00:00:00:01 dev eth1 self permanent
+...
+33:33:00:00:00:01 dev br0 self permanent
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;In our use-case we have two different VLANs, so we need to change the
+bridge port itself to be a &lt;em&gt;tagged&lt;/em&gt; VLAN member, otherwise we cannot
+distinguish between frames on different VLANs and thus cannot set up
+our VLAN interfaces on top, like this:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;    vlan1     vlan2      Layer-3 :: IP Networking
+         \   /           -------------------------------
+          br0
+     ______|_______      Layer-2 :: Switching
+    [#_#_#_#_#_#_#] 
+    /  |   :  |    \     -------------------------------
+eth0 eth1  : eth2 eth3   Layer-1 :: Link layer
+           :
+  VLAN 1   :    VLAN 2
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Let’s change br0 to be a tagged member of VLAN 1 and 2:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;# bridge vlan add vid 1 dev br0 self
+# bridge vlan add vid 2 dev br0 self
+# bridge vlan show
+port    vlan ids
+eth0     1 PVID Egress Untagged
+eth1     1 PVID Egress Untagged
+eth2     2 PVID Egress Untagged
+eth3     2 PVID Egress Untagged
+br0      1
+         2
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Now we add our VLAN interface on top of &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;br0&lt;/code&gt; so we can communicate with
+the outside world.  Some prefer naming VLAN interfaces &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;br0.1&lt;/code&gt;, but here
+we use &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;vlan1&lt;/code&gt; since we will only use one bridge:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;# ip link add name vlan1 link br0 type vlan id 1
+# ip addr add 192.168.1.1/24 dev vlan1
+# ip link add name vlan2 link br0 type vlan id 2
+# ip addr add 192.168.2.1/24 dev vlan2
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Bring everything up by taking up the bridge and its ports:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;# ip link set eth0 up
+# ip link set eth1 up
+# ip link set eth2 up
+# ip link set eth3 up
+# ip link set br0 up
+# ip link set vlan1 up
+# ip link set vlan2 up
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;This is a good time to have a look at the available interfaces:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;# ip -brief link show
+lo        UNKNOWN  00:00:00:00:00:00 &amp;lt;LOOPBACK,UP,LOWER_UP&amp;gt;
+eth0      UP       00:80:e1:42:55:a0 &amp;lt;NO-CARRIER,BROADCAST,MULTICAST,UP&amp;gt;
+eth1      UP       00:80:e1:42:55:a1 &amp;lt;BROADCAST,MULTICAST,UP,LOWER_UP&amp;gt;
+eth2      UP       00:80:e1:42:55:a2 &amp;lt;NO-CARRIER,BROADCAST,MULTICAST,UP&amp;gt;
+eth3      UP       00:80:e1:42:55:a3 &amp;lt;BROADCAST,MULTICAST,UP,LOWER_UP&amp;gt;
+br0       UP       00:80:e1:42:55:a0 &amp;lt;BROADCAST,MULTICAST,UP,LOWER_UP&amp;gt;
+vlan1@br0 UP       00:80:e1:42:55:a0 &amp;lt;BROADCAST,MULTICAST,UP,LOWER_UP&amp;gt; 
+vlan2@br0 UP       00:80:e1:42:55:a0 &amp;lt;BROADCAST,MULTICAST,UP,LOWER_UP&amp;gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;As you can see, the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;vlan1&lt;/code&gt; interface is created on top of &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;br0&lt;/code&gt;,
+&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;vlan1@br0&lt;/code&gt;.  The addresses of all interfaces can be inspected with the
+&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;ip address&lt;/code&gt; command.  For a quick overview, use the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;-brief&lt;/code&gt; switch:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;# ip -br addr show
+lo               UNKNOWN        127.0.0.1/8
+eth0             UP             
+eth1             UP             
+eth2             UP             
+eth3             UP             
+br0              UP             
+vlan1@br0        UP             192.168.1.1/24
+vlan2@br0        UP             192.168.2.1/24
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Here we have automatically configured IPv6 addresses on eth1 and br0,
+this should be disabled since IP addresses in a our bridge setup should
+only be set on the VLAN interfaces.&lt;/p&gt;
+
+&lt;h2&gt;Summary and More&lt;/h2&gt;
+
+&lt;p&gt;In this post we covered the theory of Ethernet bridges and VLANs, and
+then proceeded to provide an example of how to set this up a single
+bridge up in Linux.&lt;/p&gt;
+
+&lt;p&gt;But wait, what if we want to connect two separate bridges, on two PCs,
+with multiple VLANs on each?  Let’s extend the image used previously,
+and add a syntax for denoting VLAN memberships: &lt;em&gt;1U&lt;/em&gt; means untagged
+member of VLAN 1, &lt;em&gt;2U&lt;/em&gt; means untagged in VLAN 2, and &lt;em&gt;1T&lt;/em&gt; means tagged
+member of VLAN 1, etc.&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;  vlan1     vlan2              vlan1     vlan2
+       \   /                        \   /
+        br0  1T,2T                   br0  1T,2T,3T
+     ____|____                    ____|__________
+    [#_#_#_#_#]                  [#_#_#_#_#_#_#_#]
+    /  |      \                  /  |   |   \    \
+eth2  eth1     eth0----------eth0 eth1 eth2  eth3 eth4
+ 2U    1U             1T,2T        1U   2U    3U   3U
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;The image shows two devices with one bridge each.  The right-hand bridge
+has more ports and VLANs, but they are interconnected using port eth0 on
+each bridge.  This shared link, VLAN “trunk” (see above), serves as the
+backbone for this network.&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;Notice how VLAN 3 only exists on the right-hand bridge, both bridges
+filter traffic going out and coming in on the trunk from port eth0, to
+prevent VLAN 3 from reaching beyond its boundary (port eth3 and eth4).&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;h2&gt;EOF&lt;/h2&gt;
+
+&lt;p&gt;Future posts will cover how the Linux bridge can be used with single
+board computers that support switching in hardware, i.e., offloading of
+the otherwise CPU intensive parts.&lt;/p&gt;
+
+&lt;p&gt;Feel free to contact Westermo for more information, help designing your
+network, and hands on training on our products.&lt;/p&gt;
+
+&lt;p&gt;Visit &lt;a href=&quot;https://www.westermo.com&quot;&gt;https://www.westermo.com&lt;/a&gt;&lt;/p&gt;</content>
+
+      
+      
+      
+      
+      
+
+      
+        <author>
+            <name>Joachim Wiberg</name>
+          
+          
+        </author>
+      
+
+      
+
+      
+        <category term="howto" />
+      
+
+      
+        <summary type="html">This is the second post in a series of posts showing how to set up networking in Linux using low-level tools. It’s time to talk about bridging (switching) and VLANs.</summary>
+      
+
+      
+      
+    </entry>
+  
+  
+  
+    <entry>
+      
+      <title type="html">Linux Networking Introduction</title>
+      
+      
+      <link href="https://westermo.github.io/2020/03/24/linux-networking-intro/" rel="alternate" type="text/html" title="Linux Networking Introduction" />
+      
+      <published>2020-03-24T19:22:42+01:00</published>
+      <updated>2022-02-18T18:02:36+01:00</updated>
+      <id>https://westermo.github.io/2020/03/24/linux-networking-intro</id>
+      <content type="html" xml:base="https://westermo.github.io/2020/03/24/linux-networking-intro/">&lt;p&gt;Every engineer and sysadmin working with Linux have at one time or
+another run into networking problems.  This post is the first in a
+series showing how to set up networking using low-level tools like:
+&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;ip&lt;/code&gt;, &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;bridge&lt;/code&gt;, &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;tc&lt;/code&gt;, and &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;ethtool&lt;/code&gt;.&lt;/p&gt;
+
+&lt;p&gt;Let’s start by exploring the basic concepts of networking.&lt;/p&gt;
+
+&lt;!-- more --&gt;
+
+&lt;h2&gt;LAN and Broadcast Domains&lt;/h2&gt;
+
+&lt;p&gt;A Local Area Network, or LAN, is a shared Ethernet or Wi-Fi network of
+end devices, which allows unicast, multicast, and broadcast traffic.
+Devices on a LAN today usually communicate using the Internet Protocol
+(IP), and are commonly using IPv4, more on that below.&lt;/p&gt;
+
+&lt;p&gt;A brodcast domain is a LAN.  Many LAN segments can be bridged to create
+a larger broadcast domain.  To facilitate communication between LANs you
+need a router, sometimes referred to as gateway.  More on bridging and
+routing later.&lt;/p&gt;
+
+&lt;p&gt;All devices have an IP address, but to actually communicate with a
+neighbor on a LAN, a device must find the neighbors physical address,
+the MAC address.&lt;/p&gt;
+
+&lt;p&gt;The process in IPv4 to find the MAC address for IP address 192.168.2.200
+is to send a broadcast message to everyone on the LAN:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;ARP who has 192.168.2.200?
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Everyone who isn’t 192.168.2.200 will ignore and drop the message.  But the
+device which has address 192.168.2.200 will respond:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;ARP 192.168.2.200 is at 00:07:7c:c0:ff:ee
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;ARP stands for Address Resolution Protocol.  When debugging low-level
+networking problems, this is usually the first suspect to investigate.
+Useful tools for debugging ARP related problems are:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;a href=&quot;http://man7.org/linux/man-pages/man8/arp.8.html&quot;&gt;arp(8)&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;http://man7.org/linux/man-pages/man8/ip-neighbour.8.html&quot;&gt;ip-neighbour(8)&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;http://man7.org/linux/man-pages/man8/arping.8.html&quot;&gt;arpping(8)&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;Needless to say, ARP is crucial for IPv4 networking.  When in doubt,
+use &lt;a href=&quot;https://en.wikipedia.org/wiki/Tcpdump&quot;&gt;tcpdump&lt;/a&gt;, &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;tshark&lt;/code&gt;, or
+&lt;a href=&quot;https://en.wikipedia.org/wiki/Wireshark&quot;&gt;wireshark&lt;/a&gt; to debug.  On
+most small embedded targets only &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;tcpdump&lt;/code&gt; exists, it can save &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;.pcap&lt;/code&gt;
+format which can be more easily inspected with Wireshark.&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;The astute reader probably noticed that sending broadcast messages is
+quite a waste, since most devices on the network will have to wake up,
+read the message only to throw it away a nanosecond later.  In IPv6, ARP
+has been replaced with another mechanism, not covered here.  In fact, in
+IPv6 broadcast does not exist at all.&lt;/p&gt;
+
+&lt;h2&gt;IP Networking&lt;/h2&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;This HowTo series will focus entirely on IPv4 networking.&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;As explained in the previous section, IP Networking relies on Ethernet
+or Wi-Fi networks where the physical, or MAC, address is required for
+communication.&lt;/p&gt;
+
+&lt;p&gt;As a very short introduction to IPv4 networking we present a few basic
+concepts:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;IPv4 address, e.g. 192.168.2.200&lt;/li&gt;
+  &lt;li&gt;IPv4 netmask, e.g. 255.255.255.0&lt;/li&gt;
+  &lt;li&gt;IPv4 gateway, e.g. 192.168.2.1&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;IP Networks work fine without a gateway/router.  The only requirement is
+that all end devices share the same LAN (broadcast domain) and the same
+IP network.&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;Multiple IP networks may share the same LAN, called &lt;em&gt;multinetting&lt;/em&gt;.&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;The address is unique to a single device.  It maps 1:1 to the physical
+MAC address of a PC network interface card (NIC), or similar.  A NIC may
+however have multiple IP addresses.&lt;/p&gt;
+
+&lt;p&gt;The netmask is common to all devices in the same IP subnet.  In this
+example we’ve chosen a classic Class-C network, because they are
+probably the easiest to wrap your brain around.  The netmask is
+sometimes written in a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;/LEN&lt;/code&gt; syntax, in the case of 255.255.255.0 it
+corresponds to /24, because there are 24 binary 1’s, counted from the
+left before the first binary 0.&lt;/p&gt;
+
+&lt;p&gt;Hence, to denote a network one can write one of:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;192.168.2.0 netmask 255.255.255.0, or&lt;/li&gt;
+  &lt;li&gt;192.168.2/24&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;This network has two reserved addresses; then network 192.168.2.0 and
+the broadcast address 192.168.2.255.  All other addresses can be used
+by end devices.&lt;/p&gt;
+
+&lt;p&gt;In comparison, a Class-B network could look like this:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;172.16.0.0 netmask 255.255.0.0, or&lt;/li&gt;
+  &lt;li&gt;172.16/16&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;This is a much bigger network, it can have 65534 end devices.  The
+reserved network address is 172.16.0.0, but the broadcast address is
+172.16.255.255.&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;The whole range of IP addresses in 192.168.xxx.xxx are called &lt;em&gt;private&lt;/em&gt;,
+as such they are reserved for LANs and must never be exposed on the
+Internet.  There exist more private IP ranges that can be used.&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;h2&gt;Setting IP address and default route in Linux&lt;/h2&gt;
+
+&lt;p&gt;Unless you are on a desktop Linux distribution, where much of the
+networking magic is handled by high-level interfaces like
+&lt;a href=&quot;https://en.wikipedia.org/wiki/NetworkManager&quot;&gt;NetworkManager&lt;/a&gt;,
+you need some way of setting IP address and default route.&lt;/p&gt;
+
+&lt;p&gt;There are two major approaches:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;static IP address assignment and default route&lt;/li&gt;
+  &lt;li&gt;dynamic assignment using DHCP&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;To set the IP address of an interface, here &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;eth0&lt;/code&gt;, in Linux there are
+both the traditional &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;ifconfig&lt;/code&gt; tool and the new &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;ip address&lt;/code&gt; command:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;ifconfig eth0 192.168.2.200 netmask 255.255.255.0
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;or&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;ip address add 192.168.2.200/24 dev eth0
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Inspect interface addresses using&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;ifconfig
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;or&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;ip address
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Setting the default route (gateway) can be done using the traditional
+&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;route&lt;/code&gt; tool or the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;ip route&lt;/code&gt; command:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;route default gw 192.168.2.1
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;or&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;ip route add default via 192.168.2.1
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Most users are however happy just to get an IP address dynamically and
+don’t really care where it comes from.  However, for this to work you
+need a DHCP server on the same LAN (or use a proxy, called DHCP relay,
+but more about that in another post).  Just about all small office, home
+and industrial gateways have built-in DHCP servers, most of them use the
+amazing &lt;a href=&quot;https://en.wikipedia.org/wiki/Dnsmasq&quot;&gt;dnsmasq&lt;/a&gt;, more about
+that in a later blog post.  There are many DHCP clients available, see
+your particular system for details, here are a few:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;dhclient, https://www.isc.org/dhcp/&lt;/li&gt;
+  &lt;li&gt;pump, available originally in RedHat&lt;/li&gt;
+  &lt;li&gt;dhcpcd, https://roy.marples.name/projects/dhcpcd/&lt;/li&gt;
+  &lt;li&gt;udhcpc, available in &lt;a href=&quot;https://www.busybox.net&quot;&gt;BusyBox&lt;/a&gt; on most embedded systems&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Setting up the DHCP client is usually not required on most desktop
+systems, as it is the default.  In the GUI there’s usually just a
+simple checkbox or radio button.  Here are a few pointers though:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;https://wiki.debian.org/DHCP_Client&lt;/li&gt;
+  &lt;li&gt;https://wiki.archlinux.org/index.php/dhcpcd&lt;/li&gt;
+  &lt;li&gt;https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/5/html/deployment_guide/s1-dhcp-configuring-client&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2&gt;Summary and More&lt;/h2&gt;
+
+&lt;p&gt;In this post we’ve touched upon the topic of local area networks (LANs)
+and broadcast domains.  Here we talked briefly about ARP and its role in
+establishing communication between two devices on a LAN.&lt;/p&gt;
+
+&lt;p&gt;We then proceeded to the topic of IP networking and how to set an IP
+address and default route in Linux.&lt;/p&gt;
+
+&lt;p&gt;But wait, even if we now understand how to communicate on a LAN, how can
+we communicate between separate LANs?  Well … remember the gateway?&lt;/p&gt;
+
+&lt;p&gt;The IP stack in your device knows how to talk to devices in the same IP
+subnet (see above), for everything else it checks the routing table.  In
+most end-devices there are two routes, in our case:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;# route -n
+Kernel IP routing table
+Destination     Gateway         Genmask         Flags Metric Ref    Use Iface
+0.0.0.0         192.168.2.1     0.0.0.0         UG    0      0        0 eth0
+192.168.2.0     0.0.0.0         255.255.255.0   U     0      0        0 eth0
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Our device has IP address 192.168.2.200, which falls in the net route
+(last line), but for everything else it will use the default route.
+I.e., if we want to talk to 192.168.1.200 in a neighboring network,
+we send an ARP for 192.168.2.1.  Our gateway responds with its MAC
+address, and we use that as the destination address of all frames,
+but the IP header has the destination of 192.168.1.200.  When our
+frames reach the gateway it can see, from the IP header, that it
+is not the final destination, so it in turn checks &lt;em&gt;its&lt;/em&gt; routing
+table to see if it has a net route or must forward our frames to
+yet another gateway.&lt;/p&gt;
+
+&lt;h2&gt;EOF&lt;/h2&gt;
+
+&lt;p&gt;There is of course more, like; how does DNS work, and where can I learn
+more about DHCP relay agents?  Don’t worry, there will be more network
+related posts coming up, and you can always contact Westermo for more
+information, courses, and even some helpful products.&lt;/p&gt;
+
+&lt;p&gt;Visit &lt;a href=&quot;https://www.westermo.com&quot;&gt;https://www.westermo.com&lt;/a&gt;&lt;/p&gt;</content>
+
+      
+      
+      
+      
+      
+
+      
+        <author>
+            <name>Joachim Wiberg</name>
+          
+          
+        </author>
+      
+
+      
+
+      
+        <category term="howto" />
+      
+
+      
+        <summary type="html">Every engineer and sysadmin working with Linux have at one time or another run into networking problems. This post is the first in a series showing how to set up networking using low-level tools like: ip, bridge, tc, and ethtool. Let’s start by exploring the basic concepts of networking.</summary>
+      
+
+      
+      
+    </entry>
+  
+  
+  
+    <entry>
+      
+      <title type="html">Running Foreign Containers on LXD</title>
+      
+      
+      <link href="https://westermo.github.io/2020/03/02/running-foreign-containers-on-lxd/" rel="alternate" type="text/html" title="Running Foreign Containers on LXD" />
+      
+      <published>2020-03-02T15:43:00+01:00</published>
+      <updated>2022-02-18T18:02:36+01:00</updated>
+      <id>https://westermo.github.io/2020/03/02/running-foreign-containers-on-lxd</id>
+      <content type="html" xml:base="https://westermo.github.io/2020/03/02/running-foreign-containers-on-lxd/">&lt;!-- more --&gt;
+
+&lt;p&gt;Recently, we added LXD support to &lt;a href=&quot;https://github.com/myrootfs/myrootfs&quot;&gt;myrootfs&lt;/a&gt;, to make it easy to test
+a container on your local machine before deploying it to the target
+device.  In addition to wrapping the basics of importing images and
+launching containers, there is also support for handling containers of
+foreign architectures.  This is very useful in embedded scenarios, as it
+allows you to test your container on your development system before
+deploying to the target.&lt;/p&gt;
+
+&lt;p&gt;All of this has been integrated to &lt;a href=&quot;https://github.com/myrootfs/myrootfs&quot;&gt;myrootfs&lt;/a&gt; so that you don’t have
+worry about it. This post is a behind-the-scenes look at how LXD can be
+configured to make it work.&lt;/p&gt;
+
+&lt;h2&gt;Native Container&lt;/h2&gt;
+
+&lt;p&gt;We’ll start easy, creating a native container (i.e. &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;x86_64&lt;/code&gt; in my
+case):&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ make ARCH=x86 defconfig &amp;amp;&amp;amp; make
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Once this is done we’ll have a SquashFS image available in
+&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;images/&lt;/code&gt;. In order to import it to LXD, we create a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;metadata.yaml&lt;/code&gt;
+file to describe it:&lt;/p&gt;
+
+&lt;div class=&quot;language-yaml highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;na&quot;&gt;architecture&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;x86_64&lt;/span&gt;
+&lt;span class=&quot;na&quot;&gt;creation_date&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;m&quot;&gt;1582833008&lt;/span&gt;
+&lt;span class=&quot;na&quot;&gt;properties&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+  &lt;span class=&quot;na&quot;&gt;os&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;myrootfs&lt;/span&gt;
+  &lt;span class=&quot;na&quot;&gt;release&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;1.0.0&lt;/span&gt;
+  &lt;span class=&quot;na&quot;&gt;description&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;myrootfs-1.0.0&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;LXD expects the metadata in a tarball, to we’ll put it in one:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ tar caf metadata.tar.gz metadata.yaml
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Then we can import it to LXD:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ lxc image import --alias myrootfs metadata.tar.gz myrootfs.img
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Now we can create a container and attach to it:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ lxc launch -e myrootfs
+Creating the instance
+Instance name is: firm-kite
+Starting firm-kite
+~/src/github.com/myrootfs/myrootfs/images(master)$ lxc console firm-kite
+To detach from the console, press: &amp;lt;ctrl&amp;gt;+a q
+
+/ # uname -a
+Linux myrootfs 5.3.0-29-generic #31-Ubuntu SMP Fri Jan 17 17:27:26 UTC 2020 aarch64 GNU/Linux
+/ #
+$ lxc stop firm-kite
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Well, that was pretty easy. I think we’re ready to tackle a
+cross-compiled container now!&lt;/p&gt;
+
+&lt;h2&gt;Foreign Container&lt;/h2&gt;
+
+&lt;p&gt;First, let’s install the statically linked version of QEMU’s usermode
+emulation binaries. On Debian derivatives, this is available in the
+package &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;qemu-user-static&lt;/code&gt;:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;# apt install qemu-user-static
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Importantly, this will also take care of setting up &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;binfmt_misc&lt;/code&gt;
+entries for all supported architectures.&lt;/p&gt;
+
+&lt;p&gt;We’re now ready to build our foreign container. We could pick any
+architecture supported by &lt;a href=&quot;https://github.com/myrootfs/myrootfs&quot;&gt;myrootfs&lt;/a&gt;. I asked my magic 8-ball and it
+told me to use &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;aarch64&lt;/code&gt;, and who am I to tempt the gods.&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ make ARCH=arm64 generic_defconfig &amp;amp;&amp;amp; make
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;LXD will refuse to even attempt to start a container of a different
+architecture than the host’s. Fortunately we can just lie to it by
+using the same metadata file as in the previous section.&lt;/p&gt;
+
+&lt;p&gt;We can then import it just like before:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ lxc image import --alias myrootfs-aarch64 metadata.tar.gz myrootfs.img
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;As expected, launching the container will not end well:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ lxc launch myrootfs-aarch64
+Creating the container
+Container name is: above-boar
+Starting above-boar
+Error: Failed to run: /usr/lib/lxd/lxd forkstart above-boar /var/lib/lxd/containers /var/log/lxd/above-boar/lxc.conf:
+Try `lxc info --show-log local:above-boar` for more info
+$ lxc info --show-log local:above-boar
+Name: above-boar
+Remote: unix://
+Architecture: x86_64
+Created: 2020/03/02 08:15 UTC
+Status: Stopped
+Type: persistent
+Profiles: default
+
+Log:
+
+lxc above-boar 20200302081554.516 WARN     conf - conf.c:lxc_setup_devpts:1616 - Invalid argument - Failed to unmount old devpts instance
+lxc above-boar 20200302081554.519 ERROR    start - start.c:start:2028 - No such file or directory - Failed to exec &quot;/sbin/init&quot;
+lxc above-boar 20200302081554.519 ERROR    sync - sync.c:__sync_wait:62 - An error occurred in another process (expected sequence number 7)
+lxc above-boar 20200302081554.519 WARN     network - network.c:lxc_delete_network_priv:2589 - Operation not permitted - Failed to remove interface &quot;eth0&quot; with index 235
+lxc above-boar 20200302081554.519 ERROR    lxccontainer - lxccontainer.c:wait_on_daemonized_start:842 - Received container state &quot;ABORTING&quot; instead of &quot;RUNNING&quot;
+lxc above-boar 20200302081554.520 ERROR    start - start.c:__lxc_start:1939 - Failed to spawn container &quot;above-boar&quot;
+lxc 20200302081554.537 WARN     commands - commands.c:lxc_cmd_rsp_recv:132 - Connection reset by peer - Failed to receive response for command &quot;get_state&quot;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;The kernel is configured to run &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;aarch64&lt;/code&gt; binaries using the
+interpreter &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;/usr/bin/qemu-aarch64-static&lt;/code&gt; using &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;binfmt_misc&lt;/code&gt;:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ cat /proc/sys/fs/binfmt_misc/qemu-aarch64
+enabled
+interpreter /usr/bin/qemu-aarch64-static
+flags: OC
+offset 0
+magic 7f454c460201010000000000000000000200b700
+mask ffffffffffffff00fffffffffffffffffeffffff
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;But this binary is not available inside the LXD container. We can
+change that by adding a “device” in LXD parlance which bind mounts in
+the binary we need. This can be done in different ways, I will create
+a profile and apply it to our container, that makes it easy to reuse
+in the future. The profile looks like this:&lt;/p&gt;
+
+&lt;div class=&quot;language-yaml highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;na&quot;&gt;devices&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+  &lt;span class=&quot;na&quot;&gt;qemu-aarch64-static&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;path&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;/usr/bin/qemu-aarch64-static&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;source&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;/usr/bin/qemu-aarch64-static&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;type&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;disk&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Why is this a “device”, and of type “disk” nonetheless, you might
+ask. Well I don’t know what to tell you, that’s the names they
+chose. Points for originality I guess.&lt;/p&gt;
+
+&lt;p&gt;A profile is created and applied to the instance like so:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ lxc profile create qemu-aarch64
+Profile qemu-aarch64 created
+$ lxc profile edit qemu-aarch64 &amp;lt;&amp;lt;EOF
+&amp;gt; devices:
+&amp;gt;   qemu-aarch64-static:
+&amp;gt;     path: /usr/bin/qemu-aarch64-static
+&amp;gt;     source: /usr/bin/qemu-aarch64-static
+&amp;gt;     type: disk
+&amp;gt; EOF
+$ lxc profile add above-boar qemu-aarch64
+Profile qemu-aarch64 added to above-boar
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;If we start it again:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ lxc start above-boar
+$ lxc console above-boar
+To detach from the console, press: &amp;lt;ctrl&amp;gt;+a q
+
+/ # uname -a
+Linux myrootfs 4.15.0-76-generic #86-Ubuntu SMP Fri Jan 17 17:24:28 UTC 2020 aarch64 GNU/Linux
+/ # ps
+  PID USER       VSZ STAT COMMAND
+    1 root     57760 S    {init} /usr/bin/qemu-aarch64-static /sbin/init
+  166 root     57760 S    {udhcpc} /usr/bin/qemu-aarch64-static /sbin/udhcpc -R -n -p /var/run/udhcpc.et
+  175 root     57760 S    {syslogd} /usr/bin/qemu-aarch64-static /sbin/syslogd -b 3 -S -D -L
+  180 root     56728 S    {dropbear} /usr/bin/qemu-aarch64-static /sbin/dropbear -R -B -K 30 -I 900
+  182 root     57760 S    {sh} /usr/bin/qemu-aarch64-static /bin/sh
+  185 root         0 0W   {/bin/ps} /bin/ps
+/ #
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Success!&lt;/p&gt;</content>
+
+      
+      
+      
+      
+      
+
+      
+        <author>
+            <name>Tobias Waldekranz</name>
+          
+          
+        </author>
+      
+
+      
+        <category term="containers" />
+      
+
+      
+
+      
+        <summary type="html"></summary>
+      
+
+      
+      
+    </entry>
+  
+  
+  
+    <entry>
+      
+      <title type="html">Hairpin Multicast Routing</title>
+      
+      
+      <link href="https://westermo.github.io/2020/01/17/hairpin-multicast-routing/" rel="alternate" type="text/html" title="Hairpin Multicast Routing" />
+      
+      <published>2020-01-17T09:36:42+01:00</published>
+      <updated>2022-02-18T18:02:36+01:00</updated>
+      <id>https://westermo.github.io/2020/01/17/hairpin-multicast-routing</id>
+      <content type="html" xml:base="https://westermo.github.io/2020/01/17/hairpin-multicast-routing/">&lt;!-- more --&gt;
+
+&lt;h1&gt;Problem&lt;/h1&gt;
+
+&lt;p&gt;For a given IP multicast group, if the following conditions are true:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;There is a “hairpin” multicast route, i.e. the ingress interface is
+equal to the egress interface, configured for that group.&lt;/li&gt;
+  &lt;li&gt;There is an open local socket, which has joined (in IGMP terms) that
+same group.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Linux will send out &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;TTL - 1&lt;/code&gt; copies to the network. Instead of the
+expected: &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;1&lt;/code&gt;.&lt;/p&gt;
+
+&lt;h1&gt;Reproduction&lt;/h1&gt;
+
+&lt;p&gt;On the target machine, use &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;smcroute&lt;/code&gt; to setup a hairpin route and
+perform a join on that same group:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;# smcrouted
+# smcroutectl add  eth0 198.18.1.1 239.1.1.1 eth0
+# smcroutectl join eth0            239.1.1.1
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Inject traffic to that group with this &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;trafgen&lt;/code&gt; payload:&lt;/p&gt;
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;{
+        eth(sa=02:00:00:00:00:01, da=01:00:5e:01:01:01),
+        ipv4(saddr=198.18.1.1, daddr=239.1.1.1, ttl=5)
+        udp(sp=1, dp=2),
+        &quot;Hello world&quot;
+}
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Snooping &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;eth0&lt;/code&gt; on the target:&lt;/p&gt;
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;# tcpdump -vnli eth0 multicast
+tcpdump: listening on eth0, link-type EN10MB (Ethernet), capture size 262144 bytes
+15:07:28.395793 IP (tos 0x0, ttl 5, id 0, offset 0, flags [none], proto UDP (17), length 39)
+    198.18.1.1.1 &amp;gt; 239.1.1.1.2: UDP, length 11
+15:07:28.395852 IP (tos 0x0, ttl 4, id 0, offset 0, flags [none], proto UDP (17), length 39)
+    198.18.1.1.1 &amp;gt; 239.1.1.1.2: UDP, length 11
+15:07:28.395898 IP (tos 0x0, ttl 3, id 0, offset 0, flags [none], proto UDP (17), length 39)
+    198.18.1.1.1 &amp;gt; 239.1.1.1.2: UDP, length 11
+15:07:28.395906 IP (tos 0x0, ttl 2, id 0, offset 0, flags [none], proto UDP (17), length 39)
+    198.18.1.1.1 &amp;gt; 239.1.1.1.2: UDP, length 11
+15:07:28.395912 IP (tos 0x0, ttl 1, id 0, offset 0, flags [none], proto UDP (17), length 39)
+    198.18.1.1.1 &amp;gt; 239.1.1.1.2: UDP, length 11
+^C
+5 packets captured
+5 packets received by filter
+0 packets dropped by kernel
+#
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;We can see the incoming frame, with &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;TTL=5&lt;/code&gt; being routed back four
+times, decrementing the TTL by one for each packet.&lt;/p&gt;
+
+&lt;h1&gt;Investigation&lt;/h1&gt;
+
+&lt;p&gt;How are we getting here? Make stacks!&lt;/p&gt;
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;# ply 'k:dev_queue_xmit { print(stack); }'
+info: creating kallsyms cache
+ply: active
+
+	dev_queue_xmit+1
+	ip_finish_output+318
+	ip_mc_output+139
+	NF_HOOK.constprop.52+228
+	ipmr_queue_xmit.isra.39+982
+	ip_mr_forward+325
+	ip_mr_input+323
+	ip_rcv_finish+125
+	ip_rcv+217
+	__netif_receive_skb_one_core+80
+	__netif_receive_skb+19
+	netif_receive_skb_internal+57
+	napi_gro_receive+216
+	receive_buf+1188
+	virtnet_poll+230
+	net_rx_action+619
+	__softirqentry_text_start+235
+	irq_exit+181
+	do_IRQ+86
+	common_interrupt+15
+	native_safe_halt+18
+	__cpuidle_text_start+24
+	arch_cpu_idle+10
+	default_idle_call+30
+	do_idle+450
+	cpu_startup_entry+110
+	rest_init+188
+	start_kernel+1207
+	x86_64_start_reservations+42
+	x86_64_start_kernel+114
+	secondary_startup_64+164
+
+
+	dev_queue_xmit+1
+	ip_finish_output+318
+	ip_mc_output+139
+	NF_HOOK.constprop.52+228
+	ipmr_queue_xmit.isra.39+982
+	ip_mr_forward+325
+	ip_mr_input+323
+	ip_rcv_finish+125
+	ip_rcv+217
+	__netif_receive_skb_one_core+80
+	__netif_receive_skb+19
+	process_backlog+191
+	net_rx_action+619
+	__softirqentry_text_start+235
+	run_ksoftirqd+50
+	smpboot_thread_fn+357
+	kthread+253
+	ret_from_fork+31
+
+
+	dev_queue_xmit+1
+	ip_finish_output+318
+	ip_mc_output+139
+	NF_HOOK.constprop.52+228
+	ipmr_queue_xmit.isra.39+982
+	ip_mr_forward+325
+	ip_mr_input+323
+	ip_rcv_finish+125
+	ip_rcv+217
+	__netif_receive_skb_one_core+80
+	__netif_receive_skb+19
+	process_backlog+191
+	net_rx_action+619
+	__softirqentry_text_start+235
+	run_ksoftirqd+50
+	smpboot_thread_fn+357
+	kthread+253
+	ret_from_fork+31
+
+
+	dev_queue_xmit+1
+	ip_finish_output+318
+	ip_mc_output+139
+	NF_HOOK.constprop.52+228
+	ipmr_queue_xmit.isra.39+982
+	ip_mr_forward+325
+	ip_mr_input+323
+	ip_rcv_finish+125
+	ip_rcv+217
+	__netif_receive_skb_one_core+80
+	__netif_receive_skb+19
+	process_backlog+191
+	net_rx_action+619
+	__softirqentry_text_start+235
+	run_ksoftirqd+50
+	smpboot_thread_fn+357
+	kthread+253
+	ret_from_fork+31
+
+^Cply: deactivating
+#
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Ok, first packet is going out as expected, the other four are coming
+from the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;process_backlog&lt;/code&gt; path, meaning that we’re most likely
+calling &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;enqueue_to_backlog&lt;/code&gt; somewhere:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;# ply 'k:enqueue_to_backlog { print(stack); exit(0); }'
+ply: active
+
+	enqueue_to_backlog+1
+	netif_rx_ni+33
+	dev_loopback_xmit+154
+	ip_mc_finish_output+39
+	ip_mc_output+352
+	NF_HOOK.constprop.52+228
+	ipmr_queue_xmit.isra.39+982
+	ip_mr_forward+325
+	ip_mr_input+323
+	ip_rcv_finish+125
+	ip_rcv+217
+	__netif_receive_skb_one_core+80
+	__netif_receive_skb+19
+	netif_receive_skb_internal+57
+	napi_gro_receive+216
+	receive_buf+1188
+	virtnet_poll+230
+	net_rx_action+619
+	__softirqentry_text_start+235
+	irq_exit+181
+	do_IRQ+86
+	common_interrupt+15
+	native_safe_halt+18
+	__cpuidle_text_start+24
+	arch_cpu_idle+10
+	default_idle_call+30
+	do_idle+450
+	cpu_startup_entry+110
+	rest_init+188
+	start_kernel+1207
+	x86_64_start_reservations+42
+	x86_64_start_kernel+114
+
+ply: deactivating
+#
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Looking at the code:&lt;/p&gt;
+
+&lt;div class=&quot;language-c highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;	&lt;span class=&quot;k&quot;&gt;if&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;rt&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;rt_flags&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;&amp;amp;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;RTCF_MULTICAST&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+		&lt;span class=&quot;k&quot;&gt;if&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;sk_mc_loop&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;sk&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+&lt;span class=&quot;cp&quot;&gt;#ifdef CONFIG_IP_MROUTE
+&lt;/span&gt;		&lt;span class=&quot;cm&quot;&gt;/* Small optimization: do not loopback not local frames,
+		   which returned after forwarding; they will be  dropped
+		   by ip_mr_input in any case.
+		   Note, that local frames are looped back to be delivered
+		   to local recipients.
+
+		   This check is duplicated in ip_mr_input at the moment.
+		 */&lt;/span&gt;
+		    &lt;span class=&quot;o&quot;&gt;&amp;amp;&amp;amp;&lt;/span&gt;
+		    &lt;span class=&quot;p&quot;&gt;((&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;rt&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;rt_flags&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;amp;&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;RTCF_LOCAL&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;||&lt;/span&gt;
+		     &lt;span class=&quot;o&quot;&gt;!&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;IPCB&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;skb&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;flags&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;amp;&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;IPSKB_FORWARDED&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;))&lt;/span&gt;
+&lt;span class=&quot;cp&quot;&gt;#endif
+&lt;/span&gt;		   &lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+			&lt;span class=&quot;k&quot;&gt;struct&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;sk_buff&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;*&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;newskb&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;skb_clone&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;skb&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;GFP_ATOMIC&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+			&lt;span class=&quot;k&quot;&gt;if&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;newskb&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+				&lt;span class=&quot;n&quot;&gt;NF_HOOK&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;NFPROTO_IPV4&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;NF_INET_POST_ROUTING&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+					&lt;span class=&quot;n&quot;&gt;net&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;sk&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;newskb&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;nb&quot;&gt;NULL&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;newskb&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;dev&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+					&lt;span class=&quot;n&quot;&gt;ip_mc_finish_output&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+		&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+
+		&lt;span class=&quot;cm&quot;&gt;/* Multicasts with ttl 0 must not go beyond the host */&lt;/span&gt;
+
+		&lt;span class=&quot;k&quot;&gt;if&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;ip_hdr&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;skb&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;ttl&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;==&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+			&lt;span class=&quot;n&quot;&gt;kfree_skb&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;skb&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+			&lt;span class=&quot;k&quot;&gt;return&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+		&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+	&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;We see that the reason that we’re not getting any replicated packets
+unless we join the group is that &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;rt-&amp;gt;rt_flags &amp;amp; RTCF_LOCAL&lt;/code&gt; will be
+false in that case. However, the other guard should still apply since
+the packet has been routed. The comment also references a duplicated
+check in &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;ip_mr_input&lt;/code&gt;:&lt;/p&gt;
+&lt;div class=&quot;language-c highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;	&lt;span class=&quot;cm&quot;&gt;/* Packet is looped back after forward, it should not be
+	 * forwarded second time, but still can be delivered locally.
+	 */&lt;/span&gt;
+	&lt;span class=&quot;k&quot;&gt;if&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;IPCB&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;skb&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;flags&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;amp;&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;IPSKB_FORWARDED&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+		&lt;span class=&quot;k&quot;&gt;goto&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;dont_forward&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Alright, so everything should be great then! Alas, it is not. We are
+sad. This must mean that the flag is cleared somewhere before the
+duplicated packet reaches &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;ip_mr_input&lt;/code&gt;.&lt;/p&gt;
+
+&lt;p&gt;Using GDB, we can verify that the flag is indeed set when we enqueue
+the packet:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;Temporary breakpoint 11, enqueue_to_backlog (skb=0xffff88800aa84200, cpu=0, qtail=0xffff88800de03b00) at net/core/dev.c:4225
+4225	{
+(gdb) print ((struct inet_skb_parm*)((skb)-&amp;gt;cb))-&amp;gt;flags
+$7 = 1
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Still set when we come back to process the queue:&lt;/p&gt;
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;Temporary breakpoint 13, process_backlog (napi=0xffff88800de222d0, quota=64) at net/core/dev.c:5855
+5855				__netif_receive_skb(skb);
+(gdb) p skb
+$9 = (struct sk_buff *) 0xffff88800aa84200
+(gdb) print ((struct inet_skb_parm*)((skb)-&amp;gt;cb))-&amp;gt;flags
+$10 = 1
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;And when entering the IP stack:&lt;/p&gt;
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;Temporary breakpoint 14, ip_rcv (skb=0xffff88800aa84200, dev=0xffff88800f58a000, pt=0xffffffff82308ce0 &amp;lt;ip_packet_type&amp;gt;, orig_dev=0xffff88800f58a000) at net/ipv4/ip_input.c:518
+518	{
+(gdb) print ((struct inet_skb_parm*)((skb)-&amp;gt;cb))-&amp;gt;flags
+$11 = 1
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;But not after pre-routing:&lt;/p&gt;
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;Temporary breakpoint 15, ip_rcv_finish (net=0xffffffff822a9700 &amp;lt;init_net&amp;gt;, sk=0x0 &amp;lt;irq_stack_union&amp;gt;, skb=0xffff88800aa84200) at net/ipv4/ip_input.c:401
+401	{
+(gdb) print ((struct inet_skb_parm*)((skb)-&amp;gt;cb))-&amp;gt;flags
+$12 = 0
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;strong&gt;Aside:&lt;/strong&gt; Yes, I am aware of watchpoints, but I could not get them to
+work for some reason. When in doubt, brute force!&lt;/p&gt;
+
+&lt;p&gt;This means that we’re dropping the flag in &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;ip_rcv&lt;/code&gt;, which is mostly
+just a wrapper for &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;ip_rcv_core&lt;/code&gt; in which we find this:&lt;/p&gt;
+
+&lt;div class=&quot;language-c highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;	&lt;span class=&quot;cm&quot;&gt;/* Remove any debris in the socket control block */&lt;/span&gt;
+	&lt;span class=&quot;n&quot;&gt;memset&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;IPCB&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;skb&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;),&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;sizeof&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;k&quot;&gt;struct&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;inet_skb_parm&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;));&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Thus, when we reach &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;ip_mr_input&lt;/code&gt; the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;IPSKB_FORWARDED&lt;/code&gt; will &lt;strong&gt;NEVER&lt;/strong&gt;
+be set. As a result, the packet will keep being replicated until the
+TTL runs out.&lt;/p&gt;
+
+&lt;h1&gt;Discussion&lt;/h1&gt;
+
+&lt;p&gt;Why is this code here:&lt;/p&gt;
+
+&lt;div class=&quot;language-c highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;	&lt;span class=&quot;cm&quot;&gt;/* Remove any debris in the socket control block */&lt;/span&gt;
+	&lt;span class=&quot;n&quot;&gt;memset&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;IPCB&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;skb&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;),&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;sizeof&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;k&quot;&gt;struct&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;inet_skb_parm&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;));&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;It is because this routine has no way of assuming that the contents of
+&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;skb-&amp;gt;cb&lt;/code&gt; (which is the backing storage for &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;IPCB(skb)&lt;/code&gt; was previously
+set by the IP stack. It could just as well have been used by
+underlying interface code (e.g. a bridge).&lt;/p&gt;
+
+&lt;p&gt;In order for this to work as expected, the flag needs to be saved in a
+dedicated space on the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;skb&lt;/code&gt; that is not touched by other layers.&lt;/p&gt;
+
+&lt;p&gt;So why even perform the check then? Well, looking at the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;git blame&lt;/code&gt;,
+we can see that the code is coming from the initial GIT commit by
+Torvalds. It is very possible that this check has just been copied
+from the BSD from which it came, where perhaps the information was
+still available. That’s a rabbit hole for another day though.&lt;/p&gt;
+
+&lt;h1&gt;Solution&lt;/h1&gt;
+
+&lt;p&gt;At a high level, we need some way for the IPMR stack to know that
+we’ve passed through it before, and already performed the
+routing. There are a few ways that I can think of to accomplish this:&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;Add a field to &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;struct sk_buff&lt;/code&gt;.
+    &lt;ul&gt;
+      &lt;li&gt;Pros: Simple.&lt;/li&gt;
+      &lt;li&gt;Cons: New &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;skb&lt;/code&gt;-fields are seldom appreciated upstream, for good
+ reason.&lt;/li&gt;
+    &lt;/ul&gt;
+  &lt;/li&gt;
+  &lt;li&gt;Use the new &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;skb_ext_*&lt;/code&gt; functionality to append a TLV fragment to
+  the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;skb&lt;/code&gt;.
+    &lt;ul&gt;
+      &lt;li&gt;Pros: Only impacts the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;skb&lt;/code&gt; in this particular corner-case.&lt;/li&gt;
+      &lt;li&gt;Cons: A few more lines of code.&lt;/li&gt;
+    &lt;/ul&gt;
+  &lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;IMHO, (2) looks like the clear winner. In &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;ip_mc_finish_output&lt;/code&gt; we
+could &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;skb_ext_add&lt;/code&gt; an &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;SKB_EXT_IPMR_LOOPBACK&lt;/code&gt; extension indicating
+that the packet was forwarded. Something like:&lt;/p&gt;
+
+&lt;div class=&quot;language-patch highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;p&quot;&gt;@@ -328,6 +328,9 @@&lt;/span&gt; static int ip_mc_finish_output(struct net *net, struct sock *sk,
+ 		return ret;
+ 	}
+ 
+&lt;span class=&quot;gi&quot;&gt;+	if (IPCB(skb)-&amp;gt;flags &amp;amp; IPSKB_FORWARDED)
++		skb_ext_add(skb, SKB_EXT_IPMR_LOOPBACK);
++
+&lt;/span&gt; 	return dev_loopback_xmit(net, sk, skb);
+ }
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;This could then be retrieved in &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;ip_mr_input&lt;/code&gt;:&lt;/p&gt;
+
+&lt;div class=&quot;language-patch highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;p&quot;&gt;@@ -2103,6 +2103,11 @@&lt;/span&gt; int ip_mr_input(struct sk_buff *skb)
+ 		}
+ 	}
+ 
+&lt;span class=&quot;gi&quot;&gt;+	if (unlikely(skb_ext_exist(skb, SKB_EXT_IPMR_LOOPBACK))) {
++		IPCB(skb)-&amp;gt;flags |= IPSKB_FORWARDED;
++		skb_ext_put(skb, SKB_EXT_IPMR_LOOPBACK);
++	}
++
+&lt;/span&gt; 	/* Packet is looped back after forward, it should not be
+ 	 * forwarded second time, but still can be delivered locally.
+ 	 */
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;</content>
+
+      
+      
+      
+      
+      
+
+      
+        <author>
+            <name>Tobias Waldekranz</name>
+          
+          
+        </author>
+      
+
+      
+
+      
+        <category term="bugstory" />
+      
+
+      
+        <summary type="html"></summary>
+      
+
+      
+      
+    </entry>
+  
+  
+</feed>
