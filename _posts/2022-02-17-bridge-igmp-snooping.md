@@ -289,11 +289,11 @@ vlan2             Up        192.168.2.1           None       3
 ## Exercise
 
 Now, as an exercise to the reader, you can start playing around with the
-setup.  Emulate IGMP reports from end devices, investigate the various
-querierctl commands, and compatibility output options.  E.g., we use
-`-p` here only to make the output more blog friendly.
+setup.  [Emulate IGMP][nemesis] reports from end devices, investigate
+the various querierctl commands, and compatibility output options.
+E.g., we use `-p` here only to make the output more blog friendly.
 
-Also, try connecting multiple Zero devices, using host bridging, test
+Also, connect multiple NetBox devices, using [qeneth][] or GNS3, to test
 querier election (lowest IP in a LAN wins, except for 0.0.0.0), and
 router (querier) timeout with fail-over to another querierd.
 
@@ -338,5 +338,7 @@ of layer-2 services and policy that don't belong in the kernel.
 [pimd]:       https://github.com/troglobit/pimd/
 [pimd-dense]: https://github.com/troglobit/pimd-dense/
 [pim6sd]:     https://github.com/troglobit/pim6sd/
+[nemesis]:    https://github.com/libnet/nemesis/
+[qeneth]:     https://github.com/wkz/qeneth
 [Quagga]:     https://quagga.net/
 [Frr]:        https://frrouting.org/
